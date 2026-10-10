@@ -3,7 +3,7 @@ import pandas as pd
 
 def run(weights, open_price, close_price, cost_bps=8, cash_rate=0.018):
     w = weights.reindex(columns=close_price.columns).fillna(0.0)
-    ret = close_price.pct_change().fillna(0.0)
+    ret = close_price.pct_change(fill_method=None).fillna(0.0)
     nav = 1.0
     navs = []
     prev = pd.Series(0.0, index=w.columns)
