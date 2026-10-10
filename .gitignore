@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Environments & secrets
+.venv/
+venv/
+.env
+
+# Heavy / derived data (raw parquet + duckdb live in data/)
+data/
+paper/_extracted.txt
+
+# Generated reports & artifacts
+reports/*.png
+reports/*.html
+reports/*.csv
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
