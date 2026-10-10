@@ -8,7 +8,7 @@ def test_classify():
         {
             "ts_code": ["511880.SH", "511010.SH", "511380.SH", "518880.SH"],
             "name": ["银华日利", "国债ETF", "可转债ETF", "黄金ETF"],
-            "invest_type": ["货币市场型", "债券型", "债券型", "商品型"],
+            "fund_type": ["货币型", "债券型", "债券型", "其他"],
         }
     )
     c = universe.classify(fb)
