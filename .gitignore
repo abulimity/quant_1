@@ -21,6 +21,7 @@ paper/_extracted.txt
 reports/*.png
 reports/*.html
 reports/*.csv
+reports/*.parquet
 
 # OS
 .DS_Store
