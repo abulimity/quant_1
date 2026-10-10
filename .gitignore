@@ -27,3 +27,6 @@ reports/*.csv
 Thumbs.db
 desktop.ini
 
+# Superpowers SDD workspace (scratch artifacts)
+.superpowers/
+
