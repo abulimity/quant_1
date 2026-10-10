@@ -1,0 +1,53 @@
+trend:
+  windows: [21, 60]
+  rank_weights: [0.7, 0.3]
+  ann_factor: 250
+reversal:
+  ema_span: 14
+  z_window: 170
+  zbias_threshold: -0.5
+  repair_lookback: 3
+market_state:
+  alpha: 0.10
+  slope_window: 8
+  bull_threshold: 0.35
+  bear_threshold: -0.35
+  slope_up: 1.005
+  slope_down: 0.995
+dedupe:
+  corr_threshold: 0.80
+  max_holdings: 10
+multi_asset:
+  risk: 0.50
+  nasdaq: 0.375
+  gold: 0.125
+risk:
+  llm80_alpha: 0.0247          # H3：80 日等价平滑
+  index_drop_20d: -0.03
+  overheat_pct: 0.20
+  vol_target_risk: 0.26
+  vol_target_nasdaq: 0.18
+  vol_target_gold: 0.18
+  vol_target_portfolio: 0.34
+  vol_window: 60
+  port_vol_window: 20
+defensive:
+  rebalance_days: 120
+  top_n: 5
+  max_vol_60d: 0.03
+  momentum_window: 60
+execution:
+  phases: 5
+  phase_interval: 5
+  hysteresis_improve: 0.02   # H4
+  gap_delay_pct: 0.01
+costs:
+  one_side_bps: 8
+  cash_rate_annual: 0.018
+universe:
+  min_listed_days: 126
+  min_avg_amount20: 5_000_000
+hrp:
+  window: 250
+nasdaq_etf: "513100.SH"     # H10
+gold_etf: "518880.SH"       # H10
