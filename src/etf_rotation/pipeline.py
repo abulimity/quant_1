@@ -122,9 +122,12 @@ def build_weights(params: dict, start: str, end: str) -> pd.DataFrame:
     gold = params["gold_etf"]
     nas_mom = trend.momentum_score(close[nasdaq], 60)
     gold_mom = trend.momentum_score(close[gold], 60)
+    nas_vol = close[nasdaq].pct_change(fill_method=None).ewm(span=60).std() * np.sqrt(252)
+    gold_vol = close[gold].pct_change(fill_method=None).ewm(span=60).std() * np.sqrt(252)
 
     # A 股趋势约束（创业板 80 日 LLT）
     cyb = indices["399006.SZ"]
+    cyb_vol = cyb.pct_change(fill_method=None).ewm(span=60).std() * np.sqrt(252)
     cyb_llt = ms.llt(cyb, params["risk"]["llm80_alpha"])
     cyb_below = cyb < cyb_llt
     cyb_drop = cyb_llt.pct_change(20, fill_method=None)
@@ -147,6 +150,9 @@ def build_weights(params: dict, start: str, end: str) -> pd.DataFrame:
             bool(cyb_below.loc[d]) is False if pd.notna(cyb_below.loc[d]) else True,
             float(cyb_drop.loc[d]) if pd.notna(cyb_drop.loc[d]) else 0.0,
         )
+        if pd.notna(cyb_vol.loc[d]):
+            rscale *= risk_layers.vol_scale(float(cyb_vol.loc[d]),
+                                            params["risk"]["vol_target_risk"])
         risk_budget = base["risk"] * rscale
 
         target = {}
@@ -165,15 +171,23 @@ def build_weights(params: dict, start: str, end: str) -> pd.DataFrame:
                 corr = ret[cands].loc[:d].tail(250).corr()
                 keep = dedupe.dedupe(cands, corr, params["dedupe"]["corr_threshold"],
                                      params["dedupe"]["max_holdings"])
-                if keep:
+                keep = [t for t in keep
+                        if ret[t].loc[:d].tail(250).notna().sum() >= 100]
+                if len(keep) >= 2:
                     r = ret[keep].loc[:d].tail(250).dropna(axis=1)
                     w = hrp.hrp_weights(r)
                     for t, v in w.items():
                         target[t] = float(v) * risk_budget
+                elif len(keep) == 1:
+                    target[keep[0]] = risk_budget
         if base["nasdaq"] > 0:
-            target[nasdaq] = base["nasdaq"]
+            v = risk_layers.vol_scale(float(nas_vol.loc[d]) if pd.notna(nas_vol.loc[d]) else 0.0,
+                                      params["risk"]["vol_target_nasdaq"])
+            target[nasdaq] = base["nasdaq"] * v
         if base["gold"] > 0:
-            target[gold] = base["gold"]
+            v = risk_layers.vol_scale(float(gold_vol.loc[d]) if pd.notna(gold_vol.loc[d]) else 0.0,
+                                      params["risk"]["vol_target_gold"])
+            target[gold] = base["gold"] * v
 
         # 防守资金
         allocated = sum(target.values())
