@@ -141,6 +141,7 @@ def build_weights(params: dict, start: str, end: str) -> pd.DataFrame:
     cols = sorted(set([nasdaq, gold] + risk_tickers + def_tickers))
     weights = pd.DataFrame(0.0, index=days, columns=cols)
     last_def_update = -10**9
+    current_defn: list[str] = []
 
     for i, d in enumerate(days):
         phase = i % 5
@@ -193,18 +194,16 @@ def build_weights(params: dict, start: str, end: str) -> pd.DataFrame:
         allocated = sum(target.values())
         if allocated < 1.0 and i >= 60:
             if i - last_def_update >= params["defensive"]["rebalance_days"]:
-                defn_sel = defn.select(
+                current_defn = defn.select(
                     ret[def_tickers].loc[:d].tail(250),
                     vol60.loc[d, def_tickers].dropna(),
                     {t: cat.get(t, "risk") for t in def_tickers},
                 )
                 last_def_update = i
-            else:
-                defn_sel = [t for t in phase_weights[phase].index if t in def_tickers]
-            if defn_sel:
-                w = 1.0 / len(defn_sel)
-                for t in defn_sel:
-                    target[t] = target.get(t, 0.0) + w * (1.0 - allocated)
+            if current_defn:
+                w = (1.0 - allocated) / len(current_defn)
+                for t in current_defn:
+                    target[t] = target.get(t, 0.0) + w
 
         phase_weights[phase] = pd.Series(target).reindex(cols).fillna(0.0)
         combined = pd.concat(phase_weights, axis=1).mean(axis=1)
