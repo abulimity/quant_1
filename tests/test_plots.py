@@ -1,7 +1,3 @@
-import matplotlib
-
-matplotlib.use("Agg")
-
 import numpy as np
 import pandas as pd
 
@@ -15,6 +11,7 @@ def test_equity_drawdown_returns_figure():
     )
     fig = plots.equity_drawdown(nav)
     assert fig is not None
+    assert len(fig.data) == 2  # 净值 + 回撤
 
 
 def test_cost_sensitivity_returns_figure():
@@ -28,4 +25,5 @@ def test_cost_sensitivity_returns_figure():
     )
     fig = plots.cost_sensitivity(sens)
     assert fig is not None
+    assert len(fig.data) == 3  # 年化收益 / Calmar / 最大回撤
 

@@ -18,8 +18,7 @@ data/
 paper/_extracted.txt
 
 # Generated reports & artifacts
-reports/*.png
-reports/*.html
+reports/**/*.png
 reports/*.csv
 reports/*.parquet
 
