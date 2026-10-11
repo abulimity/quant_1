@@ -9,18 +9,11 @@ import pandas as pd
 
 from etf_rotation import config
 from etf_rotation.data import calendar, universe as univ
+from etf_rotation.data.paths import ADJ, BARS, FETCHED, IDX, SYMBOLS
 from etf_rotation.portfolio import defensive as defn
 from etf_rotation.portfolio import dedupe, hrp, multi_asset, risk_layers
 from etf_rotation.signals import market_state as ms
 from etf_rotation.signals import trend
-
-ROOT = Path(__file__).resolve().parents[2]
-BARS = ROOT / "data/bronze/tushare/tushare-f4f7c81a15b5779c/bars_daily.parquet"
-ADJ = ROOT / "data/bronze/tushare/tushare-f4f7c81a15b5779c/fund_adj.parquet"
-SYMBOLS = ROOT / "data/bronze/tushare/tushare-f4f7c81a15b5779c/symbols.parquet"
-IDX = ROOT / "data/bronze/tushare/tushare_index-86318b52ea0fbe04/index_daily.parquet"
-FETCHED = ROOT / "data/bronze/tushare/etf_rotation"
-
 
 def _read_parquet(path: Path) -> pd.DataFrame:
     con = duckdb.connect()
@@ -53,7 +46,11 @@ def load_indices() -> dict[str, pd.Series]:
     idx = _read_parquet(IDX)
     out = {}
     for code in ["000001.SH", "399006.SZ", "000300.SH"]:
-        s = idx[idx["ts_code"] == code].set_index("ts")["close"].sort_index()
+        p = FETCHED / f"{code}.parquet"
+        if p.exists():
+            s = _read_parquet(p).set_index("ts")["close"].sort_index()
+        else:
+            s = idx[idx["ts_code"] == code].set_index("ts")["close"].sort_index()
         out[code] = s
     for code in ["932000.CSI", "000922.CSI"]:
         s = _read_parquet(FETCHED / f"{code}.parquet").set_index("ts")["close"].sort_index()

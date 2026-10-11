@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from etf_rotation import config
+from etf_rotation import __version__, config
 from etf_rotation.evaluation import plots, trades
 from etf_rotation.pipeline import load_fund_basic, market_regime
 from etf_rotation.data import universe as univ
@@ -73,7 +73,7 @@ def main() -> None:
          plots.cost_sensitivity(sens_df)),
     ]
     plots.write_report(sections, stats, REPORTS / "可视化报告.html",
-                       subtitle=f"{start} ~ {end} · 多资产 ETF 轮动策略")
+                       subtitle=f"{start} ~ {end} · 多资产 ETF 轮动策略 · v{__version__}")
 
     t = trades.build_trade_table(weights, nav)
     try:

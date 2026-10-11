@@ -18,7 +18,7 @@ def main() -> None:
     if not token:
         raise SystemExit("TUSHARE_TOKEN missing in .env")
     OUT.mkdir(parents=True, exist_ok=True)
-    for code in ["932000.CSI", "000922.CSI"]:
+    for code in ["932000.CSI", "000922.CSI", "000001.SH", "399006.SZ", "000300.SH"]:
         try:
             df = ingest.fetch_index_daily(token, code, "2015-01-01", "2026-07-31")
             df.to_parquet(OUT / f"{code}.parquet", index=False)

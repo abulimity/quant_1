@@ -12,7 +12,11 @@
 
 - 原始数据在 `data/`（git 忽略）：tushare 的 ETF 日线/复权因子/指数日线，parquet + duckdb。
 - tushare token 存 `.env`（git 忽略），格式 `TUSHARE_TOKEN=...`。
-- 补充数据：`python scripts/fetch_data.py`（拉取 中证2000/中证红利 至 2026-07、ETF fund_basic）。
+- 数据引导（全新机器从零拉取）：
+  - `python scripts/fetch_etf_bars.py` —— ETF 日线/复权因子/标的表（全量约数十分钟，一次性）
+  - `python scripts/fetch_data.py` —— 指数（中证2000/中证红利/上证/创业板/沪深300）与 ETF fund_basic
+- 已有 bronze 快照时无需重新拉取；数据路径可用环境变量覆盖：
+  `ETF_BARS_PARQUET` / `ETF_ADJ_PARQUET` / `ETF_SYMBOLS_PARQUET` / `ETF_INDEX_PARQUET` / `ETF_FETCHED_DIR`（写入 `.env` 即可生效）。
 
 ## 运行
 
@@ -20,8 +24,11 @@
 $env:PYTHONIOENCODING="utf-8"
 .venv\Scripts\python.exe scripts\run_backtest.py 2019-01-01 2026-07-31
 .venv\Scripts\python.exe scripts\run_sensitivity.py
+.venv\Scripts\python.exe scripts\run_report.py
 .venv\Scripts\python.exe -m pytest tests -q
 ```
+
+顺序：先 `run_backtest.py` 产出净值/权重/基准，再 `run_sensitivity.py` 做成本敏感性，最后 `run_report.py` 生成交互式报告与交易明细。
 
 ## 架构
 
@@ -33,17 +40,17 @@ src/etf_rotation/
   signals/            trend(时间加权回归) / reversal(ZBias) / market_state(LLT)
   portfolio/          dedupe / hrp(PyPortfolioOpt) / multi_asset / risk_layers / defensive
   execution/          phases(五相位) / hysteresis / gap_delay(T+1跳空)
-  backtest/run.py     净值仿真（成本、现金计息）
-  evaluation/         metrics / sensitivity / overfitting(DSR)
+  backtest/run.py     bt 引擎封装（现金/持仓/净值记账、成本、现金计息）
+  evaluation/         metrics / sensitivity / overfitting(DSR) / plots / trades
   pipeline.py         端到端组装
 scripts/              入口脚本
-reports/              净值、指标、敏感性（生成物）
+reports/              净值、指标、敏感性、可视化报告、交易明细（生成物）
 tests/                pytest 单测
 ```
 
 ## 技术栈
 
-pandas / numpy / pyarrow / duckdb / tushare / TA-Lib / PyPortfolioOpt(HRP) / bt(引擎封装) / quantstats(备用) / scipy。
+pandas / numpy / pyarrow / duckdb / tushare / TA-Lib / PyPortfolioOpt(HRP) / bt(引擎) / plotly(可视化) / scipy。
 
 ## 复现假设与已知差异
 

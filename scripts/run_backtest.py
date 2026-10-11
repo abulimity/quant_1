@@ -5,7 +5,7 @@ import json
 import sys
 from pathlib import Path
 
-from etf_rotation import config
+from etf_rotation import __version__, config
 from etf_rotation.backtest import run
 from etf_rotation.evaluation import metrics
 from etf_rotation.pipeline import build_weights, compute_benchmark, load_prices
@@ -17,6 +17,7 @@ def main() -> None:
     p = config.load_params()
     start = sys.argv[1] if len(sys.argv) > 1 else "2019-01-01"
     end = sys.argv[2] if len(sys.argv) > 2 else "2026-07-31"
+    print(f"etf-rotation v{__version__}")
     print(f"building weights {start}..{end}")
     weights = build_weights(p, start, end)
     close, opn, _ = load_prices()
