@@ -8,7 +8,7 @@ from pathlib import Path
 from etf_rotation import config
 from etf_rotation.backtest import run
 from etf_rotation.evaluation import metrics
-from etf_rotation.pipeline import build_weights, load_prices
+from etf_rotation.pipeline import build_weights, compute_benchmark, load_prices
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -34,6 +34,7 @@ def main() -> None:
     out.mkdir(exist_ok=True)
     res.to_csv(out / "equity.csv")
     weights.to_parquet(out / "weights.parquet")
+    compute_benchmark(p, start, end).to_csv(out / "benchmark.csv")
     (out / "metrics.json").write_text(
         json.dumps(s, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"saved to {out}")

@@ -6,7 +6,10 @@ from pathlib import Path
 
 import pandas as pd
 
+from etf_rotation import config
 from etf_rotation.evaluation import plots, trades
+from etf_rotation.pipeline import load_fund_basic, market_regime
+from etf_rotation.data import universe as univ
 
 ROOT = Path(__file__).resolve().parents[1]
 REPORTS = ROOT / "reports"
@@ -16,6 +19,7 @@ M_END = "<!-- /VIS:AUTO -->"
 
 
 def main() -> None:
+    params = config.load_params()
     equity = pd.read_csv(REPORTS / "equity.csv", parse_dates=["ts"]).set_index("ts")
     nav = equity["nav"]
     returns = equity["returns"]
@@ -23,14 +27,24 @@ def main() -> None:
     sens = json.loads((REPORTS / "sensitivity.json").read_text(encoding="utf-8"))
     sens_df = pd.DataFrame(sens["cost_sensitivity"])
     weights = pd.read_parquet(REPORTS / "weights.parquet")
+    bench = pd.read_csv(REPORTS / "benchmark.csv", parse_dates=["ts"]).set_index("ts")
 
-    f_eq = plots.equity_drawdown(nav)
-    f_sh = plots.rolling_sharpe(returns)
-    f_yr = plots.yearly_returns(returns)
-    f_cs = plots.cost_sensitivity(sens_df)
+    fb = load_fund_basic()
+    cat = univ.classify(fb)
+    nasdaq, gold = params["nasdaq_etf"], params["gold_etf"]
+    label_map = {}
+    for t in weights.columns:
+        if t == nasdaq:
+            label_map[t] = "纳指"
+        elif t == gold:
+            label_map[t] = "黄金"
+        elif cat.get(t) in ("bond", "money"):
+            label_map[t] = "防守"
+        else:
+            label_map[t] = "风险资产"
 
-    t = trades.build_trade_table(weights, nav)
-    t.to_csv(REPORTS / "trades.csv", index=False, encoding="utf-8-sig")
+    start, end = str(nav.index[0].date()), str(nav.index[-1].date())
+    regime = market_regime(start, end)
 
     stats = [
         ("年化收益", f"{metrics['ann_return']:.2%}"),
@@ -41,32 +55,31 @@ def main() -> None:
         ("日均换手", f"{metrics['turnover']:.2%}"),
     ]
     sections = [
-        (
-            "净值与回撤",
-            f"2019-01-02 ~ 2026-07-31，策略净值累计至 {nav.iloc[-1]:.2f} 倍；下方阴影为回撤。",
-            f_eq,
-        ),
-        (
-            "滚动夏普",
-            "63 日与 252 日滚动夏普，反映风险调整后收益的时变特征。",
-            f_sh,
-        ),
-        (
-            "分年度收益",
-            "各自然年度收益，绿色为正、红色为负，可与研报表 5 对照。",
-            f_yr,
-        ),
-        (
-            "成本敏感性",
-            "单边成本 0→24bp 时，年化收益、最大回撤与 Calmar 的衰减。",
-            f_cs,
-        ),
+        ("净值曲线对比", "策略 vs 等权持有全池基准 vs 沪深300，均归一化到 1.0 起始。",
+         plots.nav_comparison(nav, bench["benchmark"], bench["hs300"])),
+        ("回撤曲线", "策略与基准的滚动回撤，可直观看出回撤深度与持续时间。",
+         plots.drawdown_curve(nav, bench["benchmark"])),
+        ("滚动收益与滚动夏普", "63 日与 252 日滚动年化收益、滚动夏普，观察表现的时间稳定性。",
+         plots.rolling_perf(returns)),
+        ("子区间表现", "分年度收益 + 按牛/熊/震荡分组的累计收益，评估不同市场环境的适应性。",
+         plots.subperiod_performance(returns, regime)),
+        ("月度收益热力图", "年份 × 月份收益矩阵，绿为正、红为负，识别季节性。",
+         plots.monthly_heatmap(returns)),
+        ("持仓分布", "上：按资产类别堆叠；下：前 10 大持仓堆叠，观察轮动与集中度。",
+         plots.holdings_distribution(weights, label_map)),
+        ("收益分布", "日收益直方图叠加正态拟合，观察肥尾与偏度。",
+         plots.return_distribution(returns)),
+        ("成本敏感性", "单边成本 0→24bp 时，年化收益、最大回撤与 Calmar 的衰减。",
+         plots.cost_sensitivity(sens_df)),
     ]
-    plots.write_report(
-        sections, stats, REPORTS / "可视化报告.html",
-        subtitle="2019-01 ~ 2026-07 · 多资产 ETF 轮动策略",
-    )
+    plots.write_report(sections, stats, REPORTS / "可视化报告.html",
+                       subtitle=f"{start} ~ {end} · 多资产 ETF 轮动策略")
 
+    t = trades.build_trade_table(weights, nav)
+    try:
+        t.to_csv(REPORTS / "trades.csv", index=False, encoding="utf-8-sig")
+    except PermissionError:
+        print("WARNING: trades.csv 被占用（可能已在 Excel 中打开），保留现有文件")
     _write_report(_build_md(metrics, t))
     print(f"可视化报告.html + trades.csv written; report updated; {len(t)} trades")
 

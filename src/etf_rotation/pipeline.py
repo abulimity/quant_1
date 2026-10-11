@@ -52,7 +52,7 @@ def load_prices() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
 def load_indices() -> dict[str, pd.Series]:
     idx = _read_parquet(IDX)
     out = {}
-    for code in ["000001.SH", "399006.SZ"]:
+    for code in ["000001.SH", "399006.SZ", "000300.SH"]:
         s = idx[idx["ts_code"] == code].set_index("ts")["close"].sort_index()
         out[code] = s
     for code in ["932000.CSI", "000922.CSI"]:
@@ -210,4 +210,48 @@ def build_weights(params: dict, start: str, end: str) -> pd.DataFrame:
         weights.loc[d, combined.index] = combined.values
 
     return weights
+
+
+def market_regime(start: str, end: str) -> pd.Series:
+    """按三指数 LLT 复合分划分 bull/range/bear（与策略一致）。"""
+    indices = load_indices()
+    days = calendar.trading_days(start, end)
+    comp = ms.composite_score(
+        {
+            "sh": indices["000001.SH"],
+            "zz2000": indices["932000.CSI"],
+            "zzhl": indices["000922.CSI"],
+        }
+    ).reindex(days)
+    return comp.map(
+        lambda v: "bull" if v >= 0.35 else ("bear" if v <= -0.35 else "range")
+    )
+
+
+def compute_benchmark(params: dict, start: str, end: str) -> pd.DataFrame:
+    """等权持有可投资风险池（每日再平衡）与沪深300 的归一化净值。"""
+    close, _, amt = load_prices()
+    indices = load_indices()
+    fb = load_fund_basic()
+    cat = univ.classify(fb)
+    days = calendar.trading_days(start, end)
+
+    ret = close.pct_change(fill_method=None)
+    n_days = close.notna().cumsum()
+    avg20 = amt.rolling(20).mean()
+    risk = [t for t, c in cat.items() if c == "risk" and t in close.columns]
+
+    elig = (n_days[risk] >= params["universe"]["min_listed_days"]) & (
+        avg20[risk] >= params["universe"]["min_avg_amount20"]
+    )
+    r_risk = ret[risk].where(elig, np.nan)
+    bench_ret = r_risk.mean(axis=1, skipna=True).reindex(days).fillna(0.0)
+    bench_ret = bench_ret.shift(1).fillna(0.0)  # 对齐策略：T 日持仓、T+1 起计收益
+    bench_nav = (1 + bench_ret).cumprod()
+
+    hs = indices.get("000300.SH")
+    hs_ret = hs.reindex(days).pct_change(fill_method=None).fillna(0.0)
+    hs_ret = hs_ret.shift(1).fillna(0.0)
+    hs_nav = (1 + hs_ret).cumprod()
+    return pd.DataFrame({"benchmark": bench_nav, "hs300": hs_nav}, index=days)
 

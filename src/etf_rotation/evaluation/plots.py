@@ -11,13 +11,21 @@ from plotly.subplots import make_subplots
 
 FONT = "Microsoft YaHei, SimHei, sans-serif"
 
-# 统一配色：蓝=主/净值，橙=Calmar，绿=正收益/中长窗，红=回撤/负收益
 BLUE = "#2c6fbb"
 BLUE_LIGHT = "#7fb3d5"
 ORANGE = "#e67e22"
 GREEN = "#27ae60"
 RED = "#c0392b"
+GREY = "#95a5a6"
 GRID = "#dfe4ea"
+
+CAT_COLORS = {
+    "风险资产": "#2c6fbb",
+    "纳指": "#27ae60",
+    "黄金": "#e67e22",
+    "防守": "#8e44ad",
+    "现金": "#bdc3c7",
+}
 
 
 def _style(fig: go.Figure, height: int = 420) -> go.Figure:
@@ -36,52 +44,142 @@ def _style(fig: go.Figure, height: int = 420) -> go.Figure:
     return fig
 
 
-def equity_drawdown(nav: pd.Series) -> go.Figure:
-    nav = nav.dropna()
-    dd = (nav / nav.cummax() - 1) * 100
-    fig = make_subplots(
-        rows=2, cols=1, shared_xaxes=True, row_heights=[0.72, 0.28],
-        vertical_spacing=0.04, subplot_titles=("策略净值", "回撤 %"),
-    )
-    fig.add_trace(
-        go.Scatter(x=nav.index, y=nav.values, name="净值", line=dict(color=BLUE, width=1.4)),
-        row=1, col=1,
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=dd.index, y=dd.values, name="回撤", fill="tozeroy",
-            line=dict(color=RED, width=0.6), fillcolor="rgba(192,57,43,0.18)",
-        ),
-        row=2, col=1,
-    )
-    fig.update_layout(height=520)
-    return _style(fig, height=520)
-
-
-def rolling_sharpe(returns: pd.Series, windows=(63, 252)) -> go.Figure:
-    r = returns.dropna()
+def nav_comparison(nav: pd.Series, benchmark: pd.Series, hs300: pd.Series) -> go.Figure:
     fig = go.Figure()
-    for w, color in zip(windows, (BLUE, GREEN)):
-        roll = r.rolling(w).mean() / r.rolling(w).std() * np.sqrt(252)
-        fig.add_trace(go.Scatter(x=roll.index, y=roll.values, name=f"{w} 日", line=dict(color=color, width=1.2)))
-    fig.add_hline(y=0, line=dict(color="#b0b8c0", width=0.7, dash="dot"))
-    fig.update_layout(title="滚动夏普", yaxis_title="Sharpe")
+    fig.add_trace(go.Scatter(x=nav.index, y=nav.values / nav.iloc[0], name="策略",
+                             line=dict(color=BLUE, width=1.8)))
+    fig.add_trace(go.Scatter(x=benchmark.index, y=benchmark.values / benchmark.iloc[0],
+                             name="等权全池基准", line=dict(color=GREEN, width=1.4)))
+    fig.add_trace(go.Scatter(x=hs300.index, y=hs300.values / hs300.iloc[0], name="沪深300",
+                             line=dict(color=ORANGE, width=1.4, dash="dot")))
+    fig.update_layout(title="净值曲线对比（归一化 1.0 起始）", yaxis_title="净值")
+    return _style(fig, 440)
+
+
+def drawdown_curve(nav: pd.Series, benchmark: pd.Series | None = None) -> go.Figure:
+    fig = go.Figure()
+    if benchmark is not None:
+        bdd = (benchmark / benchmark.cummax() - 1) * 100
+        fig.add_trace(go.Scatter(x=bdd.index, y=bdd.values, name="基准", fill="tozeroy",
+                                 line=dict(color=GREY, width=0.6),
+                                 fillcolor="rgba(127,140,141,0.15)"))
+    dd = (nav / nav.cummax() - 1) * 100
+    fig.add_trace(go.Scatter(x=dd.index, y=dd.values, name="策略", fill="tozeroy",
+                             line=dict(color=RED, width=0.6),
+                             fillcolor="rgba(192,57,43,0.20)"))
+    fig.update_layout(title="回撤曲线", yaxis_title="回撤 %")
     return _style(fig)
 
 
-def yearly_returns(returns: pd.Series) -> go.Figure:
+def rolling_perf(returns: pd.Series, windows=(63, 252)) -> go.Figure:
     r = returns.dropna()
+    fig = make_subplots(
+        rows=2, cols=1, shared_xaxes=True, row_heights=[0.5, 0.5],
+        vertical_spacing=0.06, subplot_titles=("滚动年化收益", "滚动夏普"),
+    )
+    for w, color in zip(windows, (BLUE, GREEN)):
+        ann = r.rolling(w).mean() * 252
+        fig.add_trace(go.Scatter(x=ann.index, y=ann.values, name=f"{w} 日收益",
+                                 line=dict(color=color, width=1.2)), row=1, col=1)
+    for w, color in zip(windows, (BLUE, GREEN)):
+        sh = r.rolling(w).mean() / r.rolling(w).std() * np.sqrt(252)
+        fig.add_trace(go.Scatter(x=sh.index, y=sh.values, name=f"{w} 日夏普",
+                                 line=dict(color=color, width=1.2)), row=2, col=1)
+    fig.add_hline(y=0, row=1, col=1, line=dict(color="#b0b8c0", width=0.7, dash="dot"))
+    fig.add_hline(y=0, row=2, col=1, line=dict(color="#b0b8c0", width=0.7, dash="dot"))
+    fig.update_yaxes(tickformat=".0%", row=1, col=1)
+    fig.update_layout(height=540)
+    return _style(fig, height=540)
+
+
+def subperiod_performance(returns: pd.Series, regime: pd.Series) -> go.Figure:
+    r = returns.dropna()
+    g = regime.reindex(r.index).fillna("range")
     yr = r.groupby(r.index.year).apply(lambda s: (1 + s).prod() - 1)
-    colors = [RED if v < 0 else GREEN for v in yr]
+    by_reg = r.groupby(g).apply(lambda s: (1 + s).prod() - 1)
+    reg_cn = {"bull": "牛市", "bear": "熊市", "range": "震荡"}
+    fig = make_subplots(
+        rows=1, cols=2, subplot_titles=("分年度收益", "市场阶段收益"),
+        horizontal_spacing=0.08,
+    )
+    fig.add_trace(
+        go.Bar(x=[str(y) for y in yr.index], y=yr.values,
+               marker_color=[RED if v < 0 else GREEN for v in yr],
+               text=[f"{v:.1%}" for v in yr.values], textposition="outside"),
+        row=1, col=1,
+    )
+    labels = [reg_cn.get(k, str(k)) for k in by_reg.index]
+    fig.add_trace(
+        go.Bar(x=labels, y=by_reg.values,
+               marker_color=[RED if v < 0 else GREEN for v in by_reg.values],
+               text=[f"{v:.1%}" for v in by_reg.values], textposition="outside"),
+        row=1, col=2,
+    )
+    fig.update_yaxes(tickformat=".0%")
+    fig.update_layout(height=420)
+    return _style(fig, height=420)
+
+
+def monthly_heatmap(returns: pd.Series) -> go.Figure:
+    r = returns.dropna()
+    m = r.groupby([r.index.year, r.index.month]).apply(
+        lambda s: (1 + s).prod() - 1
+    ).unstack()
+    text = [[f"{v:.1%}" for v in row] for row in m.values]
     fig = go.Figure(
-        go.Bar(
-            x=[str(y) for y in yr.index], y=yr.values, marker_color=colors,
-            text=[f"{v:.1%}" for v in yr.values], textposition="outside",
+        go.Heatmap(
+            z=m.values, x=[f"{i}月" for i in m.columns], y=[str(y) for y in m.index],
+            colorscale=[[0, RED], [0.5, "#ffffff"], [1, GREEN]], zmid=0,
+            text=text, texttemplate="%{text}", colorbar=dict(title="收益"),
         )
     )
-    fig.add_hline(y=0, line=dict(color="#b0b8c0", width=0.7, dash="dot"))
-    fig.update_layout(title="分年度收益", yaxis_title="收益 %")
+    fig.update_layout(title="月度收益热力图")
+    return _style(fig, 460)
+
+
+def holdings_distribution(weights: pd.DataFrame, label_map: dict) -> go.Figure:
+    w = weights.copy()
+    order = ["风险资产", "纳指", "黄金", "防守", "现金"]
+    by_cat = pd.DataFrame(index=w.index)
+    for c in order[:-1]:
+        cols = [t for t in w.columns if label_map.get(t, "风险资产") == c]
+        by_cat[c] = w[cols].sum(axis=1) if cols else 0.0
+    by_cat["现金"] = 1.0 - w.sum(axis=1)
+
+    meanw = w.mean().sort_values(ascending=False)
+    top = list(meanw.head(10).index)
+    top_df = w[top].copy()
+    others = [t for t in w.columns if t not in top]
+    top_df["其他"] = w[others].sum(axis=1)
+    top_df["现金"] = 1.0 - w.sum(axis=1)
+
+    fig = make_subplots(
+        rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.06,
+        subplot_titles=("资产类别分布", "前 10 大持仓分布"),
+    )
+    for c in order:
+        fig.add_trace(go.Scatter(x=by_cat.index, y=by_cat[c], name=c, stackgroup="a",
+                                 line=dict(width=0.3), fillcolor=CAT_COLORS.get(c)),
+                      row=1, col=1)
+    for t in top_df.columns:
+        fig.add_trace(go.Scatter(x=top_df.index, y=top_df[t], name=t, stackgroup="b",
+                                 line=dict(width=0.3)), row=2, col=1)
     fig.update_yaxes(tickformat=".0%")
+    fig.update_layout(height=620, showlegend=True)
+    return _style(fig, height=620)
+
+
+def return_distribution(returns: pd.Series) -> go.Figure:
+    r = returns.dropna()
+    fig = go.Figure()
+    fig.add_trace(go.Histogram(x=r.values, nbinsx=80, histnorm="probability density",
+                               name="日收益", marker_color="rgba(44,111,187,0.55)"))
+    mu, sd = r.mean(), r.std()
+    xs = np.linspace(float(r.min()), float(r.max()), 200)
+    pdf = np.exp(-0.5 * ((xs - mu) / sd) ** 2) / (sd * np.sqrt(2 * np.pi))
+    fig.add_trace(go.Scatter(x=xs, y=pdf, name="正态拟合", line=dict(color=ORANGE, width=1.5)))
+    fig.update_layout(title="日收益分布", bargap=0.02)
+    fig.update_xaxes(tickformat=".1%")
     return _style(fig)
 
 
