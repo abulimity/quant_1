@@ -16,6 +16,7 @@ from etf_rotation.signals import market_state as ms
 from etf_rotation.signals import trend
 
 def _read_parquet(path: Path) -> pd.DataFrame:
+    """用 duckdb 读 parquet（比 pandas 读更快、省内存）。"""
     con = duckdb.connect()
     df = con.execute(f"SELECT * FROM read_parquet('{path.as_posix()}')").fetchdf()
     con.close()
@@ -23,6 +24,12 @@ def _read_parquet(path: Path) -> pd.DataFrame:
 
 
 def load_prices() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """加载复权收盘价、开盘价、成交额三个「交易日 × 标的」面板。
+
+    复权口径：后复权（各标的以自身最新一期复权因子为基准），
+    与研报 Wind 口径有差异，属 H9 假设。成交额按 close × volume × 100 估算
+    （volume 单位为手）。
+    """
     bars = _read_parquet(BARS)
     adj = _read_parquet(ADJ)
     sym = _read_parquet(SYMBOLS)
@@ -43,6 +50,7 @@ def load_prices() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
 
 
 def load_indices() -> dict[str, pd.Series]:
+    """加载市场指数：上证/创业板/沪深300（优先取已拉取文件）+ 中证2000/中证红利。"""
     idx = _read_parquet(IDX)
     out = {}
     for code in ["000001.SH", "399006.SZ", "000300.SH"]:
@@ -88,6 +96,15 @@ def momentum_panel(logp: pd.DataFrame, window: int) -> pd.DataFrame:
 
 
 def build_weights(params: dict, start: str, end: str) -> pd.DataFrame:
+    """计算策略目标权重面板（index=回测交易日、columns=标的、每行和 ≤ 1）。
+
+    主线：市场状态定基础风险预算 → 风险池横截面动量排名 + 去重 + HRP 配权
+    → 纳指/黄金各自波动缩放 → 防守仓承接剩余资金 → 五相位（每日仅 1 相位更新）。
+
+    注意：信号相关序列（regime/nas_mom/...）都在全历史（2015 起）上计算，
+    回测循环按日期 d 用 `.loc[d]` 取当日值；严禁用 `.iloc[i]` 按位置取
+    （全历史序列与回测窗口错位约 4 年，曾导致前视错位 bug，见代码审阅手册 §8.1）。
+    """
     close, opn, amt = load_prices()
     indices = load_indices()
     fb = load_fund_basic()
@@ -95,6 +112,7 @@ def build_weights(params: dict, start: str, end: str) -> pd.DataFrame:
 
     days = calendar.trading_days(start, end)
 
+    # 信号预计算（全历史，保证 2019 起点也有足够 warmup；无前视）
     logp = np.log(close)
     m21 = momentum_panel(logp, 21)
     m60 = momentum_panel(logp, 60)
@@ -103,7 +121,7 @@ def build_weights(params: dict, start: str, end: str) -> pd.DataFrame:
     n_days = close.notna().cumsum()
     avg20 = amt.rolling(20).mean()
 
-    # 市场状态
+    # 市场状态：三指数 LLT 复合分 → bull/range/bear（决定选券规则与基础风险偏好）
     comp = ms.composite_score(
         {"sh": indices["000001.SH"],
          "zz2000": indices["932000.CSI"],
@@ -115,6 +133,7 @@ def build_weights(params: dict, start: str, end: str) -> pd.DataFrame:
         else ("bear" if v <= params["market_state"]["bear_threshold"] else "range")
     )
 
+    # 纳指/黄金：各自 60 日动量（转负即退）与 60 日 EWMA 波动（目标 18%）
     nasdaq = params["nasdaq_etf"]
     gold = params["gold_etf"]
     nas_mom = trend.momentum_score(close[nasdaq], 60)
@@ -122,7 +141,7 @@ def build_weights(params: dict, start: str, end: str) -> pd.DataFrame:
     nas_vol = close[nasdaq].pct_change(fill_method=None).ewm(span=60).std() * np.sqrt(252)
     gold_vol = close[gold].pct_change(fill_method=None).ewm(span=60).std() * np.sqrt(252)
 
-    # A 股趋势约束（创业板 80 日 LLT）
+    # A 股趋势约束：创业板指跌破 80 日 LLT 且 LLT 20 日跌超 3% → 风险仓降至 5%
     cyb = indices["399006.SZ"]
     cyb_vol = cyb.pct_change(fill_method=None).ewm(span=60).std() * np.sqrt(252)
     cyb_llt = ms.llt(cyb, params["risk"]["llm80_alpha"])
@@ -133,7 +152,7 @@ def build_weights(params: dict, start: str, end: str) -> pd.DataFrame:
     risk_tickers = [t for t, c in cat.items() if c == "risk" and t in close.columns]
     def_tickers = [t for t, c in cat.items() if c in ("bond", "money") and t in close.columns]
 
-    # 逐日计算目标权重（五相位：每日仅 1 相位更新）
+    # 五相位：5 个独立相位，各相位每日轮换更新，最终持仓 = 5 相位等权平均
     phase_weights = [pd.Series(0.0, index=[nasdaq, gold]) for _ in range(5)]
     cols = sorted(set([nasdaq, gold] + risk_tickers + def_tickers))
     weights = pd.DataFrame(0.0, index=days, columns=cols)
@@ -142,9 +161,11 @@ def build_weights(params: dict, start: str, end: str) -> pd.DataFrame:
 
     for i, d in enumerate(days):
         phase = i % 5
+        # 日期对齐取当日信号（勿用 .iloc[i]，见 build_weights 顶部说明）
         nas_sig = float(nas_mom.loc[d]) if pd.notna(nas_mom.loc[d]) else 0.0
         gold_sig = float(gold_mom.loc[d]) if pd.notna(gold_mom.loc[d]) else 0.0
         base = multi_asset.base_weights(regime.loc[d], nas_sig, gold_sig)
+        # 分层风控：市场状态 × A 股趋势 × 波动率控制，共同缩放风险预算
         rscale = risk_layers.risk_scale(
             regime.loc[d],
             bool(cyb_below.loc[d]) is False if pd.notna(cyb_below.loc[d]) else True,
@@ -157,6 +178,7 @@ def build_weights(params: dict, start: str, end: str) -> pd.DataFrame:
 
         target = {}
         if risk_budget > 0 and i >= 170:
+            # point-in-time 可投资风险池：上市天数 + 20 日均成交额过滤
             elig = [
                 t for t in risk_tickers
                 if n_days.loc[d, t] >= params["universe"]["min_listed_days"]
@@ -165,9 +187,11 @@ def build_weights(params: dict, start: str, end: str) -> pd.DataFrame:
                 and pd.notna(m21.loc[d, t]) and pd.notna(m60.loc[d, t])
             ]
             if elig:
+                # 横截面排名：21 日动量 70% + 60 日动量 30%；21 日动量为负剔除
                 m = 0.7 * m21.loc[d, elig].rank(pct=True) + 0.3 * m60.loc[d, elig].rank(pct=True)
                 m = m[m21.loc[d, elig] > 0].sort_values(ascending=False)
                 cands = list(m.index[: 3 * params["dedupe"]["max_holdings"]])
+                # 相关性去重（0.80）→ 持仓上限 10 → HRP 配权
                 corr = ret[cands].loc[:d].tail(250).corr()
                 keep = dedupe.dedupe(cands, corr, params["dedupe"]["corr_threshold"],
                                      params["dedupe"]["max_holdings"])
@@ -181,15 +205,17 @@ def build_weights(params: dict, start: str, end: str) -> pd.DataFrame:
                 elif len(keep) == 1:
                     target[keep[0]] = risk_budget
         if base["nasdaq"] > 0:
+            # 纳指按 60 日波动向 18% 目标缩放（只减不加）
             v = risk_layers.vol_scale(float(nas_vol.loc[d]) if pd.notna(nas_vol.loc[d]) else 0.0,
                                       params["risk"]["vol_target_nasdaq"])
             target[nasdaq] = base["nasdaq"] * v
         if base["gold"] > 0:
+            # 黄金按 60 日波动向 18% 目标缩放（只减不加）
             v = risk_layers.vol_scale(float(gold_vol.loc[d]) if pd.notna(gold_vol.loc[d]) else 0.0,
                                       params["risk"]["vol_target_gold"])
             target[gold] = base["gold"] * v
 
-        # 防守资金
+        # 防守仓：承接风险退出后剩余资金，每 120 日重选，等权分配
         allocated = sum(target.values())
         if allocated < 1.0 and i >= 60:
             if i - last_def_update >= params["defensive"]["rebalance_days"]:

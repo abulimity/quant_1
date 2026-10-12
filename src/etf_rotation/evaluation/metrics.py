@@ -1,7 +1,9 @@
+"""绩效/风险指标（ml4t-tearsheet / ml4t-risk-metrics 公式，numpy 手算）。"""
 import numpy as np
 
 
 def summary(returns, periods: int = 252) -> dict:
+    """日收益 → 年化收益/波动、Sharpe、Sortino、最大回撤、Calmar、VaR/CVaR。"""
     r = returns.dropna()
     cum = (1 + r).cumprod()
     dd = cum / cum.cummax() - 1

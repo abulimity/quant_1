@@ -1,3 +1,4 @@
+"""趋势得分：时间加权线性回归的斜率与 R² 合成（研报 Momentum 公式）。"""
 from __future__ import annotations
 
 import numpy as np
@@ -5,6 +6,12 @@ import pandas as pd
 
 
 def momentum_score(close: pd.Series, window: int, ann: int = 250) -> pd.Series:
+    """Momentum(w) = [exp(250·Slope(w)) − 1] · R²(w)。
+
+    对复权价对数序列做时间加权（线性权重，越近权重越大，H1 假设）最小二乘，
+    Slope 为回归斜率（250 日年化），R² 为趋势质量折扣因子。单序列循环实现，
+    供纳指/黄金等少量标的；大批量横截面用 pipeline.momentum_panel 的向量化版本。
+    """
     logp = np.log(close)
     out = pd.Series(index=close.index, dtype=float)
     for i in range(window, len(close) + 1):
