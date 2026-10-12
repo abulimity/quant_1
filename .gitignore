@@ -13,8 +13,8 @@ __pycache__/
 venv/
 .env
 
-# Heavy / derived data (raw parquet + duckdb live in data/)
-data/
+# Heavy / derived data (raw parquet + duckdb live in /data/，只忽略仓库根目录)
+/data/
 paper/_extracted.txt
 
 # Generated reports & artifacts
