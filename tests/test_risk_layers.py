@@ -1,3 +1,5 @@
+import pytest
+
 from etf_rotation.portfolio import multi_asset, risk_layers
 
 
@@ -20,4 +22,10 @@ def test_risk_scale_weakness():
 def test_vol_scale_only_shrinks():
     assert risk_layers.vol_scale(0.20, 0.26) == 1.0
     assert abs(risk_layers.vol_scale(0.52, 0.26) - 0.5) < 1e-9
+
+
+def test_range_95pct_applied_once():
+    base = multi_asset.base_weights("range", 1.0, 1.0)
+    scale = risk_layers.risk_scale("range", True, -0.01)
+    assert base["risk"] * scale == pytest.approx(0.50 * 0.95)
 

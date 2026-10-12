@@ -104,7 +104,7 @@ Momentum(w) = [exp(250 * Slope(w)) - 1] * R2(w)
 - 技术指标：TA-Lib（EMA/STD/ROC 等）；LLT 与时间加权回归自建（业界无成熟实现）。
 - 组合优化：PyPortfolioOpt（HRP）。
 - 回测引擎：bt（pmorissette）。
-- 绩效/风险：quantstats（与 ml4t 公式手算交叉核对）。
+- 绩效/风险：numpy 手算（ml4t 公式，`evaluation/metrics.py`）；可视化：plotly（交互式 HTML，`evaluation/plots.py`）。
 - 安装注意：本机 pip/uv 默认走阿里云镜像，镜像对新 wheel 有滞后；安装时切官方 PyPI 或经代理 `http://127.0.0.1:7897`。依赖版本写死进 `requirements.txt`。
 
 排除项及原因：pandas-ta（需 Python≥3.12）、Riskfolio-Lib（过重）、empyrical/pyfolio/alphalens（quantopian 已归档）、vectorbt/backtrader（框架已选 bt）。
@@ -118,14 +118,15 @@ quant_1/
   docs/superpowers/specs/   # 本设计文档
   docs/superpowers/plans/   # 实现计划（下一步生成）
   src/etf_rotation/
-    data/              # ingest(tushare) / curate(复权/校验) / universe(point-in-time) / calendar
+    data/              # paths(路径解析) / ingest(tushare) / curate(复权/校验) / universe(point-in-time) / calendar
     signals/           # trend / reversal / market_state(LLT)
     portfolio/         # dedup / hrp / multi_asset / risk_layers / defensive
     execution/         # 五相位 / 迟滞 / T+1+跳空 / 成本 / 现金计息
-    backtest/          # bt 引擎封装 + NAV/持仓/换手
-    evaluation/        # tearsheet / risk / sensitivity / overfitting
+    backtest/          # bt 引擎封装 + NAV/持仓/换手/成本/现金计息
+    evaluation/        # metrics / sensitivity / overfitting / plots / trades
+    pipeline.py        # 端到端组装（含 compute_benchmark / market_regime）
   config/              # 参数 yaml（研报默认值 + 假设清单）
-  scripts/             # fetch_data.py、run_backtest.py、run_sensitivity.py 等入口
+  scripts/             # run_backtest.py / run_sensitivity.py / run_report.py / fetch_etf_bars.py / fetch_data.py
   notebooks/           # 探索与报告
   reports/             # 回测报告、敏感性图、差异说明（图片/csv git 忽略）
   tests/               # 单元测试
@@ -138,7 +139,8 @@ quant_1/
 - 复权：bronze 复权因子重建后复权价，日收益/趋势/波动全部基于复权价；口径差异记录。
 - 日历：A 股交易日历（tushare trade_cal 或现有 trading_calendar），窗口按交易日、调仓日对齐日历。
 - 标的池：point-in-time 滚动过滤；处理退市/清盘（不再进入新持仓，持仓中则按最后交易日强制平仓并记录）。
-- 数据补充脚本（`scripts/fetch_data.py`）：补 中证2000(932000.CSI)、中证红利(000922.CSI) 到 2026-07；补 ETF 名称/类型（fund_basic）。
+- 数据路径统一由 `data/paths.py` 解析，可用环境变量 `ETF_BARS_PARQUET`/`ETF_ADJ_PARQUET`/`ETF_SYMBOLS_PARQUET`/`ETF_INDEX_PARQUET`/`ETF_FETCHED_DIR` 覆盖（写入 `.env` 生效）。
+- 数据引导：`scripts/fetch_etf_bars.py`（ETF 日线/复权/标的全量）；`scripts/fetch_data.py`（中证2000/中证红利/上证/创业板/沪深300 指数 + fund_basic）。
 - 校验：沿用 ml4t-validate-data（OHLC 一致性、缺口、重复、极端收益、复权异常），并写报告。
 
 ## 7. 信号层设计
@@ -160,7 +162,7 @@ quant_1/
 
 - 目标权重矩阵（时间 × 资产）在 pandas 内计算，已含五相位、迟滞、风控、防守仓。
 - `bt` 只做仓位记账与净值仿真：现金跟踪、换手、成本。
-- 自建薄封装：T+1 开盘成交、高开顺延、单边 8bp、现金年化 1.8%（现金合成资产计息）。
+- 执行口径（v1.0.0）：单边 8bp 佣金回调、现金年化 1.8%；成交用 T+1 收盘价（bt 单一价格模型）。T+1 开盘成交与高开顺延在 `execution/gap_delay.py` 已实现并单测，但未接入主线（见 `TODO.md`）。
 
 ## 10. 评估与验证
 

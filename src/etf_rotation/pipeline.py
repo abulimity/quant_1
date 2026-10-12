@@ -142,7 +142,9 @@ def build_weights(params: dict, start: str, end: str) -> pd.DataFrame:
 
     for i, d in enumerate(days):
         phase = i % 5
-        base = multi_asset.base_weights(regime.iloc[i], nas_mom.iloc[i], gold_mom.iloc[i])
+        nas_sig = float(nas_mom.loc[d]) if pd.notna(nas_mom.loc[d]) else 0.0
+        gold_sig = float(gold_mom.loc[d]) if pd.notna(gold_mom.loc[d]) else 0.0
+        base = multi_asset.base_weights(regime.loc[d], nas_sig, gold_sig)
         rscale = risk_layers.risk_scale(
             regime.loc[d],
             bool(cyb_below.loc[d]) is False if pd.notna(cyb_below.loc[d]) else True,

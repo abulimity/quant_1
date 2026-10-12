@@ -3,7 +3,7 @@ def base_weights(market: str, nasdaq_signal: float, gold_signal: float) -> dict:
     if market == "bull":
         w["risk"] = 0.50
     elif market == "range":
-        w["risk"] = 0.50 * 0.95
+        w["risk"] = 0.50  # 震荡 95% 由 risk_layers.risk_scale 统一应用一次
     else:
         w["risk"] = 0.0
     if nasdaq_signal < 0:
