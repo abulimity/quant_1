@@ -22,6 +22,7 @@ reports/**/*.png
 reports/*.csv
 reports/*.parquet
 reports/runs/
+reports/grid.json
 
 # OS
 .DS_Store
