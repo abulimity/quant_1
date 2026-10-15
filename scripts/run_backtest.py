@@ -1,8 +1,8 @@
 """运行基准回测并输出绩效指标。用法：python scripts/run_backtest.py [START] [END]"""
 from __future__ import annotations
 
+import argparse
 import json
-import sys
 from pathlib import Path
 
 import pandas as pd
@@ -16,9 +16,17 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("start", nargs="?", default="2019-01-01")
+    parser.add_argument("end", nargs="?", default="2026-07-31")
+    parser.add_argument("--param", action="append", default=[])
+    args = parser.parse_args()
+
     p = config.load_params()
-    start = sys.argv[1] if len(sys.argv) > 1 else "2019-01-01"
-    end = sys.argv[2] if len(sys.argv) > 2 else "2026-07-31"
+    for kv in args.param:
+        k, v = kv.split("=", 1)
+        config.set_nested(p, k, v)
+    start, end = args.start, args.end
     print(f"etf-rotation v{__version__}")
     print(f"building weights {start}..{end}")
     weights = build_weights(p, start, end)
