@@ -21,3 +21,10 @@ def test_dsr_high_for_many_bad_trials():
     p = overfitting.deflated_sharpe([0.5] * 100, 100)
     assert 0 <= p <= 1
 
+
+def test_sharpe_haircut_returns_expected_max():
+    h = overfitting.sharpe_haircut([1.0, 1.1, 1.2, 1.3, 1.4])
+    assert set(h) == {"observed_best", "expected_max", "haircut"}
+    assert h["observed_best"] == pytest.approx(1.4)
+    assert h["haircut"] == pytest.approx(h["observed_best"] - h["expected_max"])
+
