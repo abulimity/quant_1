@@ -5,6 +5,8 @@ import json
 import sys
 from pathlib import Path
 
+import pandas as pd
+
 from etf_rotation import __version__, config
 from etf_rotation.backtest import run
 from etf_rotation.evaluation import metrics
@@ -27,13 +29,13 @@ def main() -> None:
     res = run.run(eff, opn, close,
                   cost_bps=p["costs"]["one_side_bps"],
                   cash_rate=p["costs"]["cash_rate_annual"])
-    s = metrics.summary(res["returns"])
-    s["turnover"] = float(eff.diff().abs().sum(axis=1).mean())
+    s = metrics.from_stats(res.stats)
+    s["turnover"] = float(res.turnover.mean())
     print(json.dumps({k: (round(v, 6) if isinstance(v, float) else v) for k, v in s.items()},
                      ensure_ascii=False, indent=2))
     out = ROOT / "reports"
     out.mkdir(exist_ok=True)
-    res.to_csv(out / "equity.csv")
+    pd.DataFrame({"nav": res.nav, "returns": res.returns}).to_csv(out / "equity.csv")
     weights.to_parquet(out / "weights.parquet")
     compute_benchmark(p, start, end).to_csv(out / "benchmark.csv")
     (out / "metrics.json").write_text(

@@ -22,8 +22,8 @@ def main() -> None:
     rows = []
     sharpes = []
     for cost in [0, 8, 16, 24]:
-        res = run.run(eff, opn, close, cost_bps=cost, cash_rate=0.018)
-        s = metrics.summary(res["returns"])
+        r = run.run(eff, opn, close, cost_bps=cost, cash_rate=0.018)
+        s = metrics.from_stats(r.stats)
         sharpes.append(s["sharpe"])
         rows.append({"cost_bps": cost, "ann_return": s["ann_return"],
                      "max_drawdown": s["max_drawdown"], "sharpe": s["sharpe"],

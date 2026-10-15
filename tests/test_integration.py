@@ -22,16 +22,16 @@ def test_downstream_chain_on_synthetic_data(tmp_path):
     eff = w.shift(1).fillna(0.0)
 
     res = run.run(eff, open_, close, cost_bps=8, cash_rate=0.018)
-    assert res["nav"].iloc[0] == pytest.approx(1.0)
-    assert res["returns"].notna().all()
+    assert res.nav.iloc[0] == pytest.approx(1.0)
+    assert res.returns.notna().all()
 
-    s = metrics.summary(res["returns"])
+    s = metrics.from_stats(res.stats)
     assert {"ann_return", "sharpe", "max_drawdown", "calmar"} <= set(s)
 
-    t = trades.build_trade_table(eff, res["nav"])
+    t = trades.build_trade_table(eff, res.nav)
     assert len(t) > 0
 
-    fig = plots.nav_comparison(res["nav"], res["nav"], res["nav"])
+    fig = plots.nav_comparison(res.nav, res.nav, res.nav)
     out = tmp_path / "r.html"
     plots.write_report([("测试", "说明", fig)], [("年化", f"{s['ann_return']:.2%}")], out)
     assert out.exists() and out.stat().st_size > 1000

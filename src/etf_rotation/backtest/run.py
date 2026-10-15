@@ -7,8 +7,20 @@ T+1 收盘成交的日度近似。
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
+import warnings
+
 import bt
 import pandas as pd
+
+
+@dataclass
+class BacktestResult:
+    nav: pd.Series
+    returns: pd.Series
+    stats: pd.Series
+    turnover: pd.Series
+    result: bt.backtest.Result
 
 
 class _CashInterest(bt.algos.Algo):
@@ -53,8 +65,21 @@ def run(weights, open_price, close_price, cost_bps=8, cash_rate=0.018):
         progress_bar=False,
     )
     backtest.run()
+    result = bt.run(backtest)
+    name = "etf_rotation"
     values = backtest.strategy.values.reindex(close_price.index).ffill()
     nav = values / values.iloc[0]
     returns = nav.pct_change(fill_method=None).fillna(nav.iloc[0] - 1)
-    return pd.DataFrame({"nav": nav, "returns": returns})
+    with warnings.catch_warnings():
+        # bt 在访问 outlays 时会对多标的宽表逐列 insert，触发 pandas 的
+        # PerformanceWarning（性能提示，非正确性问题），这里只在该访问点屏蔽。
+        warnings.simplefilter("ignore", pd.errors.PerformanceWarning)
+        turnover = backtest.turnover
+    return BacktestResult(
+        nav=nav,
+        returns=returns,
+        stats=result.stats[name],
+        turnover=turnover,
+        result=result,
+    )
 
