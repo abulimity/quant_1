@@ -19,7 +19,7 @@
 - Python 统一用 `.venv\Scripts\python.exe`；运行任何 Python 前先 `$env:PYTHONIOENCODING="utf-8"`
 - 滚动统计量一律 `.shift(1)`；T 日信号、T+1 成交；禁止未来信息
 - 一次只动一个维度，改完立刻重跑并对比 `reports/metrics.json`，否则无法归因
-- 回测评估指标唯一来源 = bt 内置统计（ffn `Result.stats`），不再自行计算推导；年化仅固定 `×sqrt(252)`；VaR/CVaR 不再输出
+- 回测评估指标唯一来源 = bt 内置统计（ffn `Result.stats`），不再自行计算推导；ffn 的 `daily_vol/daily_sharpe/daily_sortino` 已是年化口径，直接取值（`cagr` 为年化收益）；VaR/CVaR 不再输出
 - 交易明细、成本、换手以 bt 引擎结果（`get_transactions` / `Backtest.turnover`）为依据
 - 数据源 tushare；`.env` 的 token 不得打印/提交/写日志；`data/` 已被 gitignore
 - 改动按语义化 commit；当前分支 `main`
@@ -282,14 +282,15 @@ from etf_rotation.evaluation import metrics, overfitting
 
 
 def test_from_stats_maps_bt_stats():
-    a = math.sqrt(252)
     st = pd.Series({"cagr": 0.10, "daily_vol": 0.02, "daily_sharpe": 0.05,
                     "daily_sortino": 0.04, "max_drawdown": -0.20, "calmar": 0.5})
     s = metrics.from_stats(st)
     assert s["ann_return"] == 0.10
-    assert s["ann_vol"] == pytest.approx(0.02 * a)
-    assert s["sharpe"] == pytest.approx(0.05 * a)
-    assert s["sortino"] == pytest.approx(0.04 * a)
+    assert s["ann_vol"] == 0.02
+    assert s["sharpe"] == 0.05
+    assert s["sortino"] == 0.04
+    assert s["max_drawdown"] == -0.20
+    assert s["calmar"] == 0.5
     assert "var_95" not in s and "cvar_95" not in s
 
 
@@ -317,13 +318,12 @@ import pandas as pd
 
 
 def from_stats(stats: pd.Series) -> dict:
-    """bt Result.stats[name] → 报告口径。年化仅固定 ×sqrt(252)。"""
-    a = math.sqrt(252)
+    """bt Result.stats[name] → 报告口径（直接取 ffn 值，已是年化口径）。"""
     return {
         "ann_return": float(stats["cagr"]),
-        "ann_vol": float(stats["daily_vol"]) * a,
-        "sharpe": float(stats["daily_sharpe"]) * a,
-        "sortino": float(stats["daily_sortino"]) * a,
+        "ann_vol": float(stats["daily_vol"]),
+        "sharpe": float(stats["daily_sharpe"]),
+        "sortino": float(stats["daily_sortino"]),
         "max_drawdown": float(stats["max_drawdown"]),
         "calmar": float(stats["calmar"]),
     }
@@ -398,7 +398,7 @@ class BacktestResult:
 ```
 
 Expected: pytest 全绿；`metrics.json` 出现 `ann_return/ann_vol/sharpe/sortino/max_drawdown/calmar/turnover`，
-不再有 `var_95/cvar_95`。记下新的 `sharpe/ann_vol` 数值（口径变为 `daily_* ×sqrt(252)`，见 Task 10 文档）。
+不再有 `var_95/cvar_95`。记下新的 `ann_return/sortino/calmar/turnover` 数值（年化收益改 `cagr`、换手改引擎单边口径，见 Task 10 文档）。
 
 - [ ] **Step 6: Commit**
 
@@ -1175,7 +1175,7 @@ git commit -m "feat: add sharpe haircut for multiple-testing correction"
 
 新增/替换以下条目：
 
-- 指标口径：Sharpe/Sortino/年化波动改为 bt 内置统计 `daily_* ×sqrt(252)`，CAGR/MaxDD/Calmar 直接用 ffn 值；不再输出 VaR/CVaR。
+- 指标口径：Sharpe/Sortino/年化波动直接取 bt 内置统计 `daily_*`（ffn 已是年化口径），年化收益取 `cagr`，MaxDD/Calmar 直接用 ffn 值；不再输出 VaR/CVaR。
 - 换手口径：由 bt `Backtest.turnover` 引擎序列取均值，替代原权重差分口径。
 - 交易明细/成本：由 bt `get_transactions()` 引擎成交推导，成本与引擎佣金同公式。
 - 技术指标：不引入 pandas-ta-classic，自定义动量分/LLT/EWMA 保持手写并单测（决策说明）。
