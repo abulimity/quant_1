@@ -11,32 +11,15 @@ import bt
 import pandas as pd
 
 
-class _DailyWeights(bt.algos.Algo):
-    def __init__(self, weights: pd.DataFrame, cash_rate: float):
+class _CashInterest(bt.algos.Algo):
+    def __init__(self, cash_rate: float):
         super().__init__()
-        self.weights = weights
         self.daily = (1 + cash_rate) ** (1 / 252) - 1
 
     def __call__(self, target):
         # 闲置现金按年化计息：adjust(flow=False) 表示计入净值的收入而非资金流
         if self.daily and not target.bankrupt:
             target.adjust(target.capital * self.daily, flow=False)
-
-        now = target.now
-        if now in self.weights.index:
-            w = self.weights.loc[now]
-            invested = float(w.sum())
-            # 把「总权重 ≤1」拆成 bt 语义：temp['weights'] 之和为 1，
-            # temp['cash'] 为留存现金比例（Rebalance 据此分配）
-            if invested > 0:
-                tw = {c: float(v) / invested for c, v in w.items() if v > 0}
-            else:
-                tw = {}
-            target.temp["weights"] = tw
-            target.temp["cash"] = max(0.0, 1.0 - invested)
-        else:
-            target.temp["weights"] = {}
-            target.temp["cash"] = 1.0
         return True
 
 
@@ -58,7 +41,8 @@ def run(weights, open_price, close_price, cost_bps=8, cash_rate=0.018):
     commission = lambda q, p: abs(q) * p * cost_bps / 10000.0  # noqa: E731
     strat = bt.Strategy(
         "etf_rotation",
-        [bt.algos.RunDaily(), _DailyWeights(w, cash_rate), bt.algos.Rebalance()],
+        [bt.algos.RunDaily(), _CashInterest(cash_rate),
+         bt.algos.WeighTarget(w), bt.algos.Rebalance()],
     )
     backtest = bt.Backtest(
         strat,
