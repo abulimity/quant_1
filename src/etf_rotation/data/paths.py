@@ -17,3 +17,4 @@ ADJ = _p("ETF_ADJ_PARQUET", ROOT / "data/bronze/tushare/tushare-f4f7c81a15b5779c
 SYMBOLS = _p("ETF_SYMBOLS_PARQUET", ROOT / "data/bronze/tushare/tushare-f4f7c81a15b5779c/symbols.parquet")
 IDX = _p("ETF_INDEX_PARQUET", ROOT / "data/bronze/tushare/tushare_index-86318b52ea0fbe04/index_daily.parquet")
 FETCHED = _p("ETF_FETCHED_DIR", ROOT / "data/bronze/tushare/etf_rotation")
+WAREHOUSE = _p("ETF_WAREHOUSE_DUCKDB", ROOT / "data/warehouse.duckdb")

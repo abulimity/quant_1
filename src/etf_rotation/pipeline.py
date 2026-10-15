@@ -9,7 +9,7 @@ import pandas as pd
 
 from etf_rotation import config
 from etf_rotation.data import calendar, universe as univ
-from etf_rotation.data.paths import ADJ, BARS, FETCHED, IDX, SYMBOLS
+from etf_rotation.data.paths import ADJ, BARS, FETCHED, IDX, SYMBOLS, WAREHOUSE
 from etf_rotation.portfolio import defensive as defn
 from etf_rotation.portfolio import dedupe, hrp, multi_asset, risk_layers
 from etf_rotation.signals import market_state as ms
@@ -24,6 +24,26 @@ def _read_parquet(path: Path) -> pd.DataFrame:
 
 
 def load_prices() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """优先读 warehouse（close_adj + bars_daily），为空回退 bronze 复权重算。"""
+    con = duckdb.connect(str(WAREHOUSE))
+    try:
+        close_adj = con.execute(
+            "SELECT s.ticker, c.ts, c.close_adj FROM close_adj c "
+            "JOIN symbols s ON s.symbol_id = c.symbol_id").fetchdf()
+        bars = con.execute(
+            "SELECT s.ticker, b.ts, b.open, b.amount FROM bars_daily b "
+            "JOIN symbols s ON s.symbol_id = b.symbol_id").fetchdf()
+    finally:
+        con.close()
+    if close_adj.empty:
+        return _load_prices_from_bronze()
+    close = close_adj.pivot(index="ts", columns="ticker", values="close_adj").sort_index()
+    opn = bars.pivot(index="ts", columns="ticker", values="open").sort_index()
+    amt = bars.pivot(index="ts", columns="ticker", values="amount").sort_index()
+    return close, opn, amt
+
+
+def _load_prices_from_bronze() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """加载复权收盘价、开盘价、成交额三个「交易日 × 标的」面板。
 
     复权口径：后复权（各标的以自身最新一期复权因子为基准），

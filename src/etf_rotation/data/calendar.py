@@ -1,20 +1,35 @@
-"""交易日历：从行情 ts 去重得到 A 股交易日（warehouse 日历表为空，见 R2）。"""
+"""交易日历：优先 warehouse.trading_calendar，为空回退行情 ts 去重。"""
 from __future__ import annotations
 
 import duckdb
 import pandas as pd
 
-from etf_rotation.data.paths import BARS
+from etf_rotation.data.paths import BARS, WAREHOUSE
 
 
-def trading_days(start: str, end: str) -> pd.DatetimeIndex:
-    """从行情 ts 去重得到交易日（R2：warehouse 日历表为空）。"""
+def _from_bars(start: str, end: str) -> pd.DatetimeIndex:
+    """从行情 ts 去重得到交易日（warehouse 日历为空时的回退）。"""
     con = duckdb.connect()
     df = con.execute(
         f"SELECT DISTINCT ts FROM read_parquet('{BARS.as_posix()}') "
         f"WHERE ts BETWEEN '{start}' AND '{end}' ORDER BY ts"
     ).fetchdf()
     con.close()
+    return pd.DatetimeIndex(df["ts"])
+
+
+def trading_days(start: str, end: str) -> pd.DatetimeIndex:
+    """交易日历：优先读 warehouse.trading_calendar，为空回退行情 ts 去重。"""
+    con = duckdb.connect(str(WAREHOUSE))
+    try:
+        df = con.execute(
+            "SELECT ts FROM trading_calendar WHERE is_open AND ts BETWEEN ? AND ? ORDER BY ts",
+            [start, end],
+        ).fetchdf()
+    finally:
+        con.close()
+    if df.empty:
+        return _from_bars(start, end)
     return pd.DatetimeIndex(df["ts"])
 
 

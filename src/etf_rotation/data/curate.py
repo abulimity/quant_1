@@ -24,3 +24,15 @@ def adjusted_close(bars: pd.DataFrame, adj: pd.DataFrame) -> pd.DataFrame:
     m["close_adj"] = m["close"] * m["adj_factor"] / last
     return m[["symbol_id", "ts", "close_adj"]]
 
+
+def build_trading_calendar(bars: pd.DataFrame) -> pd.DataFrame:
+    """从行情 ts 去重得到 A 股交易日（exchange=SSE）。"""
+    ts = pd.Series(pd.to_datetime(bars["ts"]).dt.date.unique())
+    return pd.DataFrame({
+        "exchange": "SSE",
+        "ts": pd.to_datetime(ts.sort_values()),
+        "is_open": True,
+        "session_close_utc": pd.NaT,
+        "source": "tushare",
+    })
+

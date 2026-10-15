@@ -36,3 +36,10 @@ def test_adjusted_close():
     out = curate.adjusted_close(b, adj)
     assert out.loc[out.ts == "2024-01-04", "close_adj"].iloc[0] == 1.2
 
+
+def test_build_trading_calendar():
+    bars = pd.DataFrame({"ts": pd.to_datetime(["2024-01-02", "2024-01-02", "2024-01-03"])})
+    cal = curate.build_trading_calendar(bars)
+    assert list(cal["ts"]) == [pd.Timestamp("2024-01-02"), pd.Timestamp("2024-01-03")]
+    assert bool(cal["is_open"].all())
+
