@@ -9,7 +9,7 @@ import pandas as pd
 
 from etf_rotation import __version__, config
 from etf_rotation.backtest import run
-from etf_rotation.evaluation import metrics
+from etf_rotation.evaluation import metrics, registry
 from etf_rotation.pipeline import build_weights, compute_benchmark, load_prices
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -48,6 +48,16 @@ def main() -> None:
     compute_benchmark(p, start, end).to_csv(out / "benchmark.csv")
     (out / "metrics.json").write_text(
         json.dumps(s, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    flat = config.flatten_params(p)
+    flat["_start"], flat["_end"] = start, end
+    run_id = registry.config_hash(flat)
+    registry.register_run(
+        ROOT / "data" / "warehouse.duckdb", run_id, flat, s,
+        {"equity": str(out / "equity.csv"), "weights": str(out / "weights.parquet"),
+         "benchmark": str(out / "benchmark.csv"), "metrics": str(out / "metrics.json")},
+    )
+    print(f"registered run {run_id}")
     print(f"saved to {out}")
 
 
