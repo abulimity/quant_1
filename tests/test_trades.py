@@ -4,24 +4,15 @@ import pytest
 from etf_rotation.evaluation import trades
 
 
-def test_build_trade_table_derives_buys_and_sells():
-    idx = pd.date_range("2024-01-01", periods=3)
-    w = pd.DataFrame(
-        {"A": [1.0, 0.5, 0.5], "B": [0.0, 0.5, 0.5]},
-        index=idx,
+def test_build_trade_table_from_engine():
+    idx = pd.MultiIndex.from_tuples(
+        [(pd.Timestamp("2024-01-02"), "A"), (pd.Timestamp("2024-01-02"), "B")],
+        names=["Date", "Security"],
     )
-    nav = pd.Series([1.0, 1.0, 1.0], index=idx)
-    t = trades.build_trade_table(w, nav)
-    # 执行日：第 1 天买入 A(1.0)，第 2 天卖出 A(0.5)+买入 B(0.5)
-    assert len(t) == 3
-    assert set(t["ticker"]) == {"A", "B"}
-    assert t.loc[(t["ticker"] == "A") & (t["side"] == "卖出"), "weight_change"].iloc[0] == pytest.approx(-0.5)
-
-
-def test_build_trade_table_ignores_tiny_changes():
-    idx = pd.date_range("2024-01-01", periods=4)
-    w = pd.DataFrame({"A": [1.0, 1.0, 1.0 - 1e-8, 1.0 - 1e-8]}, index=idx)
-    nav = pd.Series([1.0, 1.0, 1.0, 1.0], index=idx)
-    t = trades.build_trade_table(w, nav, min_weight=1e-5)
-    assert len(t) == 1
+    tx = pd.DataFrame({"price": [10.0, 20.0], "quantity": [1.0, -0.5]}, index=idx)
+    t = trades.build_trade_table_from_engine(tx, cost_bps=8)
+    assert len(t) == 2
+    assert t.loc[t["ticker"] == "A", "side"].iloc[0] == "买入"
+    assert t.loc[t["ticker"] == "B", "cost"].iloc[0] == pytest.approx(20.0 * 0.5 * 8 / 10000)
+    assert set(t.columns) >= {"date", "ticker", "side", "price", "quantity", "notional", "cost"}
 

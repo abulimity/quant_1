@@ -75,7 +75,8 @@ def main() -> None:
     plots.write_report(sections, stats, REPORTS / "可视化报告.html",
                        subtitle=f"{start} ~ {end} · 多资产 ETF 轮动策略 · v{__version__}")
 
-    t = trades.build_trade_table(weights, nav)
+    tx = pd.read_csv(REPORTS / "transactions.csv", parse_dates=["Date"]).set_index(["Date", "Security"])
+    t = trades.build_trade_table_from_engine(tx, cost_bps=params["costs"]["one_side_bps"])
     try:
         t.to_csv(REPORTS / "trades.csv", index=False, encoding="utf-8-sig")
     except PermissionError:
@@ -92,7 +93,7 @@ def _build_md(metrics: dict, t: pd.DataFrame) -> str:
         "",
         "- [打开交互式可视化报告](可视化报告.html)（自包含、离线可用）",
         f"- [交易明细 CSV](trades.csv)：共 {len(t)} 笔，买入 {(t['side'] == '买入').sum()} 笔 / "
-        f"卖出 {(t['side'] == '卖出').sum()} 笔，合计成本 {t['cost'].sum():.4f}（净值口径）",
+        f"卖出 {(t['side'] == '卖出').sum()} 笔，合计成本 {t['cost'].sum():.4f}（引擎成交口径）",
         "",
         f"- 年化收益 {metrics['ann_return']:.2%}，最大回撤 {metrics['max_drawdown']:.2%}，"
         f"Sharpe {metrics['sharpe']:.2f}，Calmar {metrics['calmar']:.2f}",

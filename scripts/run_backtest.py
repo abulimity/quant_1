@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import warnings
 from pathlib import Path
 
 import pandas as pd
@@ -44,6 +45,10 @@ def main() -> None:
     out = ROOT / "reports"
     out.mkdir(exist_ok=True)
     pd.DataFrame({"nav": res.nav, "returns": res.returns}).to_csv(out / "equity.csv")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", pd.errors.PerformanceWarning)
+        res.result.get_transactions().reset_index().to_csv(out / "transactions.csv", index=False)
+        res.result.get_weights().to_csv(out / "holdings.csv")
     weights.to_parquet(out / "weights.parquet")
     compute_benchmark(p, start, end).to_csv(out / "benchmark.csv")
     (out / "metrics.json").write_text(

@@ -28,7 +28,7 @@ def test_downstream_chain_on_synthetic_data(tmp_path):
     s = metrics.from_stats(res.stats)
     assert {"ann_return", "sharpe", "max_drawdown", "calmar"} <= set(s)
 
-    t = trades.build_trade_table(eff, res.nav)
+    t = trades.build_trade_table_from_engine(res.result.get_transactions())
     assert len(t) > 0
 
     fig = plots.nav_comparison(res.nav, res.nav, res.nav)
