@@ -35,6 +35,8 @@
 - [ ] 3.4 `weights.shift(1).fillna(0)` 在 `run_backtest.py`/`run_sensitivity.py`/`run_grid.py` 三处重复，抽到 `execution` 公共函数。
 - [ ] 3.5 现金计息是否改「现金资产」（`cash` 列按 `(1+rf/252)` 日复利、权重补 `1-Σw`）——先决策再评估，当前保留 `_CashInterest`。
 - [ ] 3.6 持仓可视化现金口径改引擎 `backtest.strategy.cash / nav`，替换 `plots.holdings_distribution` 的 `1 - w.sum(axis=1)`。
+- [ ] 3.7 run 登记把执行口径纳入哈希：`registry.config_hash` 当前只哈希 params，close/open 两种 `--execution` 共用同一 run_id 互相覆盖（`INSERT OR REPLACE`），需把执行口径（含 `gap_delay_pct`）纳入 run_id，避免登记记录被覆盖。
+- [ ] 3.8 清理陈旧/遗留代码：`risk_layers.overheat_mask` 的 docstring 仍写「尚未接入主流水线」（实际已由 `pipeline._apply_overheat` 接入）；`execution/hysteresis.py` 与 `execution/gap_delay.py` 及其老测试 `test_hysteresis.py`/`test_gap_delay.py` 为遗留重复实现，二选一或删除。
 
 ## 阶段四：文档与仓库维护
 
