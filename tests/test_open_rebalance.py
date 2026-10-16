@@ -30,3 +30,25 @@ def test_open_fill_differs_from_close_fill():
     res = run.run(w, opn, close, cost_bps=0, cash_rate=0,
                   execution="open", gap_delay_pct=10.0)
     assert res.nav.iloc[-1] < 1.0
+
+
+def test_gap_delay_postpones_buy():
+    idx = pd.date_range("2024-01-01", periods=4, freq="B")
+    w = pd.DataFrame({"X": [0.0, 1.0, 1.0, 1.0]}, index=idx)
+    opn = pd.DataFrame({"X": [10.0, 10.2, 10.2, 10.2]}, index=idx)
+    close = pd.DataFrame({"X": [10.0, 10.0, 10.0, 10.0]}, index=idx)
+    res = run.run(w, opn, close, cost_bps=0, cash_rate=0, execution="open")
+    # 第 2 日高开 2% ≥ 1% 顺延；第 3 日按开盘补买，权重到 1
+    assert res.positions["X"].iloc[1] == 0.0
+    assert res.positions["X"].iloc[2] == 1.0
+
+
+def test_suspended_skips_fill():
+    idx = pd.date_range("2024-01-01", periods=4, freq="B")
+    w = pd.DataFrame({"X": [0.0, 1.0, 1.0, 1.0]}, index=idx)
+    opn = pd.DataFrame({"X": [10.0, np.nan, 10.5, 10.5]}, index=idx)
+    close = pd.DataFrame({"X": [10.0, 10.0, 10.5, 10.5]}, index=idx)
+    res = run.run(w, opn, close, cost_bps=0, cash_rate=0, execution="open")
+    # 第 2 日开盘 NaN（停牌）跳过；第 3 日恢复后补买
+    assert res.positions["X"].iloc[1] == 0.0
+    assert res.positions["X"].iloc[2] == 1.0

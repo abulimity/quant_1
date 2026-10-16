@@ -63,8 +63,12 @@ def run(weights, open_price, close_price, cost_bps=8, cash_rate=0.018,
     叠加买入高开顺延与停牌跳过。
     """
     close_price = close_price.ffill()  # 停牌日以前收价估值，避免 bt 对 NaN 持仓报错
-    open_price = open_price.reindex(index=close_price.index, columns=close_price.columns)
-    w = weights.reindex(index=close_price.index, columns=close_price.columns).fillna(0.0)
+    # 统一索引 dtype 为 datetime64[ns]：bt 预处理后的 universe 索引是 ns，而
+    # tushare 日历索引可能是 us，二者 dtype 不一致会触发 bidoffer 的 setup 校验。
+    idx = pd.DatetimeIndex(close_price.index).astype("datetime64[ns]")
+    close_price = close_price.set_axis(idx)
+    open_price = open_price.reindex(index=idx, columns=close_price.columns)
+    w = weights.reindex(index=idx, columns=close_price.columns).fillna(0.0)
     # 停牌/缺失价日的持仓按现金处理，避免向 NaN 价格分配资金
     w = w.mask(close_price.isna(), 0.0)
     # 只把「实际持有过」的标的交给 bt，缩小记账树

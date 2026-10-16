@@ -31,15 +31,19 @@ def load_prices() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
             "SELECT s.ticker, c.ts, c.close_adj FROM close_adj c "
             "JOIN symbols s ON s.symbol_id = c.symbol_id").fetchdf()
         bars = con.execute(
-            "SELECT s.ticker, b.ts, b.open, b.amount FROM bars_daily b "
+        "SELECT s.ticker, b.ts, b.open, b.close, b.amount FROM bars_daily b "
             "JOIN symbols s ON s.symbol_id = b.symbol_id").fetchdf()
     finally:
         con.close()
     if close_adj.empty:
         return _load_prices_from_bronze()
     close = close_adj.pivot(index="ts", columns="ticker", values="close_adj").sort_index()
-    opn = bars.pivot(index="ts", columns="ticker", values="open").sort_index()
-    amt = bars.pivot(index="ts", columns="ticker", values="amount").sort_index()
+    # 开盘价按「收盘复权比例」做后复权，与 close_adj 保持同一量纲（否则除权/拆分日
+    # 的原始开盘价与后复权收盘价跨量纲，T+1 开盘成交会产生虚假的超额买卖）。
+    m = bars.merge(close_adj, on=["ticker", "ts"], how="left")
+    m["open_adj"] = np.where(m["close"] != 0, m["open"] * m["close_adj"] / m["close"], np.nan)
+    opn = m.pivot(index="ts", columns="ticker", values="open_adj").sort_index()
+    amt = m.pivot(index="ts", columns="ticker", values="amount").sort_index()
     return close, opn, amt
 
 
@@ -61,7 +65,8 @@ def _load_prices_from_bronze() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame
     m["ticker"] = m["symbol_id"].map(ticker)
     m = m.dropna(subset=["ticker"])
     close = m.pivot(index="ts", columns="ticker", values="close_adj").sort_index()
-    opn = m.pivot(index="ts", columns="ticker", values="open").sort_index()
+    m["open_adj"] = np.where(m["close"] != 0, m["open"] * m["close_adj"] / m["close"], np.nan)
+    opn = m.pivot(index="ts", columns="ticker", values="open_adj").sort_index()
     amount = (m["close"] * m["volume"] * 100).rename("amount")
     amt = pd.concat([m[["ts", "ticker"]], amount], axis=1).pivot(
         index="ts", columns="ticker", values="amount"

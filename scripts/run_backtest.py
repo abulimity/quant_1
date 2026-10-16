@@ -26,6 +26,8 @@ def main() -> None:
     parser.add_argument("start", nargs="?", default="2019-01-01")
     parser.add_argument("end", nargs="?", default="2026-07-31")
     parser.add_argument("--param", action="append", default=[])  # 支持 --param a.b.c=value 覆盖参数
+    parser.add_argument("--execution", choices=["close", "open"], default="close",
+                        help="成交口径：close=收盘成交（bt 标准 Rebalance），open=T+1 开盘成交+跳空顺延")
     args = parser.parse_args()
 
     p = config.load_params()
@@ -43,7 +45,9 @@ def main() -> None:
     eff = weights.shift(1).fillna(0.0)  # T 日信号，T+1 生效
     res = run.run(eff, opn, close,
                   cost_bps=p["costs"]["one_side_bps"],
-                  cash_rate=p["costs"]["cash_rate_annual"])
+                  cash_rate=p["costs"]["cash_rate_annual"],
+                  execution=args.execution,
+                  gap_delay_pct=p["execution"]["gap_delay_pct"])
     s = metrics.from_stats(res.stats)
     s["turnover"] = float(res.turnover.mean())
     s["total_fees"] = float(res.fees.sum())
