@@ -89,3 +89,22 @@ def test_precompute_signals_respects_trend_windows():
         {"513100.SH": "risk", "518880.SH": "gold"})
     m63 = pipe.momentum_panel(np.log(close), 63)
     pd.testing.assert_frame_equal(sig["m60"], m63)
+
+
+def test_signal_cache_key_ignores_cost_and_dedupe():
+    p1 = config.load_params()
+    p2 = config.load_params()
+    p2["costs"]["one_side_bps"] = 16
+    p2["dedupe"]["corr_threshold"] = 0.85
+    assert pipe.signal_cache_key(p1) == pipe.signal_cache_key(p2)
+
+
+def test_signal_cache_key_changes_with_window():
+    p1 = config.load_params()
+    p2 = config.load_params()
+    p2["trend"]["windows"] = [21, 63]
+    assert pipe.signal_cache_key(p1) != pipe.signal_cache_key(p2)
+
+
+def test_load_context_is_cached():
+    assert pipe.load_context() is pipe.load_context()

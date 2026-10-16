@@ -13,7 +13,7 @@ import pandas as pd
 from etf_rotation import config
 from etf_rotation.backtest import run
 from etf_rotation.evaluation import metrics, overfitting, sensitivity
-from etf_rotation.pipeline import build_weights, load_prices
+from etf_rotation.pipeline import build_weights, load_context
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -35,16 +35,17 @@ def main() -> None:
         k, v = spec.split("=", 1)
         grid[k] = [float(x) for x in v.split(",")]  # --grid 形如 a.b=0.7,0.8,0.9
 
+    ctx = load_context()
+    close_all, opn_all = ctx["close"], ctx["opn"]
     rows, sharpes = [], []
     for combo in itertools.product(*grid.values()):
         params = dict(zip(grid.keys(), combo))
         p = config.load_params()
         for k, val in params.items():
             config.set_nested(p, k, str(val))
-        weights = build_weights(p, args.start, args.end)
-        close, opn, _ = load_prices()
-        close = close.reindex(index=weights.index, columns=weights.columns)
-        opn = opn.reindex(index=weights.index, columns=weights.columns)
+        weights = build_weights(p, args.start, args.end, context=ctx)
+        close = close_all.reindex(index=weights.index, columns=weights.columns)
+        opn = opn_all.reindex(index=weights.index, columns=weights.columns)
         eff = weights.shift(1).fillna(0.0)  # T 日信号，T+1 生效
         r = run.run(eff, opn, close,
                     cost_bps=p["costs"]["one_side_bps"],

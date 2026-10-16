@@ -15,6 +15,45 @@ from etf_rotation.portfolio import dedupe, hrp, multi_asset, risk_layers
 from etf_rotation.signals import market_state as ms
 from etf_rotation.signals import trend
 
+
+_SIGNAL_KEYS = (
+    "trend.windows",
+    "market_state.alpha",
+    "market_state.slope_window",
+    "risk.vol_window",
+    "risk.llm80_alpha",
+    "nasdaq_etf",
+    "gold_etf",
+)
+_CONTEXT_CACHE: dict | None = None
+_SIGNAL_CACHE: dict = {}
+
+
+def signal_cache_key(params: dict) -> tuple:
+    """信号预计算只依赖这些参数；其余参数变化不触发重算。"""
+    return tuple(_nested(params, k) for k in _SIGNAL_KEYS)
+
+
+def _nested(params: dict, dotted: str):
+    node = params
+    for part in dotted.split("."):
+        node = node[part]
+    return tuple(node) if isinstance(node, list) else node
+
+
+def load_context() -> dict:
+    """一次性加载并缓存价格/指数/基础信息/分类，供 build_weights 复用。"""
+    global _CONTEXT_CACHE
+    if _CONTEXT_CACHE is None:
+        close, opn, amt = load_prices()
+        indices = load_indices()
+        fb = load_fund_basic()
+        cat = univ.classify(fb)
+        _CONTEXT_CACHE = {"close": close, "opn": opn, "amt": amt,
+                          "indices": indices, "fb": fb, "cat": cat}
+    return _CONTEXT_CACHE
+
+
 def _read_parquet(path: Path) -> pd.DataFrame:
     """用 duckdb 读 parquet（比 pandas 读更快、省内存）。"""
     con = duckdb.connect()
@@ -368,7 +407,7 @@ def _apply_hysteresis(candidate, prev_final, score, risk_tickers, improve):
     return candidate
 
 
-def build_weights(params: dict, start: str, end: str) -> pd.DataFrame:
+def build_weights(params: dict, start: str, end: str, context: dict | None = None) -> pd.DataFrame:
     """计算策略目标权重面板（index=回测交易日、columns=标的、每行和 ≤ 1）。
 
     主线：市场状态定基础风险预算 → 风险池横截面动量排名 + 去重 + HRP 配权
@@ -378,12 +417,15 @@ def build_weights(params: dict, start: str, end: str) -> pd.DataFrame:
     回测循环按日期 d 用 `.loc[d]` 取当日值；严禁用 `.iloc[i]` 按位置取
     （全历史序列与回测窗口错位约 4 年，曾导致前视错位 bug，见代码审阅手册 §8.1）。
     """
-    close, opn, amt = load_prices()
-    indices = load_indices()
-    fb = load_fund_basic()
-    cat = univ.classify(fb)
+    ctx = context or load_context()
+    close, opn, amt = ctx["close"], ctx["opn"], ctx["amt"]
+    indices, cat = ctx["indices"], ctx["cat"]
     days = calendar.trading_days(start, end)
-    sig = _precompute_signals(close, opn, amt, indices, params, cat)
+    key = signal_cache_key(params)
+    sig = _SIGNAL_CACHE.get(key)
+    if sig is None:
+        sig = _precompute_signals(close, opn, amt, indices, params, cat)
+        _SIGNAL_CACHE[key] = sig
 
     nasdaq, gold = params["nasdaq_etf"], params["gold_etf"]
     cols = sorted(set([nasdaq, gold] + sig["risk_tickers"] + sig["def_tickers"]))
