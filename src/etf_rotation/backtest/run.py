@@ -23,13 +23,27 @@ class BacktestResult:
     result: bt.backtest.Result
 
 
+def _flat_commission(cost_bps: float):
+    """单边比例佣金回调：|q| * p * bps / 1e4。
+
+    bt.Backtest 的 commissions 参数支持 callable（官方文档中的
+    "original flat hook"）；本策略是规则驱动、名义本金归一、单边 bps 假设，
+    无成交量/波动率冲击建模需求，故保留平铺回调，不引入 CostModel。
+    """
+    def commission(q, p):
+        return abs(q) * p * cost_bps / 10000.0
+
+    return commission
+
+
 class _CashInterest(bt.algos.Algo):
     def __init__(self, cash_rate: float):
         super().__init__()
         self.daily = (1 + cash_rate) ** (1 / 252) - 1
 
     def __call__(self, target):
-        # 闲置现金按年化计息：adjust(flow=False) 表示计入净值的收入而非资金流
+        # 闲置现金按年化计息：adjust(flow=False) 是 bt 官方文档中
+        # "commission / dividend 类非资金流收入" 的记账原语，计入净值而非资金流。
         if self.daily and not target.bankrupt:
             target.adjust(target.capital * self.daily, flow=False)
         return True
@@ -49,8 +63,6 @@ def run(weights, open_price, close_price, cost_bps=8, cash_rate=0.018):
     active = w.columns[(w > 0).any(axis=0)]
     w = w[active]
     close_price = close_price[active]
-    # 比例佣金：每笔成交额 × 单边 bps（买卖各计一侧）
-    commission = lambda q, p: abs(q) * p * cost_bps / 10000.0  # noqa: E731
     strat = bt.Strategy(
         "etf_rotation",
         [bt.algos.RunDaily(), _CashInterest(cash_rate),
@@ -60,13 +72,12 @@ def run(weights, open_price, close_price, cost_bps=8, cash_rate=0.018):
         strat,
         close_price,
         initial_capital=1.0,
-        commissions=commission,
+        commissions=_flat_commission(cost_bps),
         integer_positions=False,
         progress_bar=False,
     )
-    backtest.run()
     result = bt.run(backtest)
-    name = "etf_rotation"
+    name = backtest.name
     values = backtest.strategy.values.reindex(close_price.index).ffill()
     nav = values / values.iloc[0]
     returns = nav.pct_change(fill_method=None).fillna(nav.iloc[0] - 1)

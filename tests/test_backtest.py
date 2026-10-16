@@ -1,6 +1,8 @@
 import pandas as pd
+import pytest
 
 from etf_rotation.backtest import run
+from etf_rotation.backtest.run import _flat_commission
 
 
 def test_buy_and_hold_nav_matches_price():
@@ -19,4 +21,10 @@ def test_cash_interest_accrues():
     res = run.run(w, close, close, cost_bps=0, cash_rate=0.252)
     assert res.nav.iloc[-1] > 1.0
     assert res.nav.is_monotonic_increasing
+
+
+def test_flat_commission_formula():
+    fn = _flat_commission(8)
+    assert fn(100, 2.0) == pytest.approx(100 * 2.0 * 8 / 10000.0)
+    assert fn(-100, 2.0) == pytest.approx(100 * 2.0 * 8 / 10000.0)
 
