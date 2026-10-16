@@ -68,3 +68,11 @@ def test_nav_uses_result_prices():
         res.nav, official / official.iloc[0], rtol=1e-12, atol=1e-12, check_names=False
     )
 
+
+def test_weigh_target_binds_by_name():
+    idx = pd.date_range("2024-01-01", periods=5)
+    w = pd.DataFrame(1.0, index=idx, columns=["X"])
+    close = pd.DataFrame({"X": [10.0, 11.0, 12.0, 13.0, 14.0]}, index=idx)
+    res = run.run(w.shift(1).fillna(0.0), close, close, cost_bps=0, cash_rate=0)
+    assert abs(res.nav.iloc[-1] - 14.0 / 11.0) < 1e-9
+

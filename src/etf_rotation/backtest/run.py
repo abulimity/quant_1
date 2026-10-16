@@ -69,7 +69,7 @@ def run(weights, open_price, close_price, cost_bps=8, cash_rate=0.018):
     strat = bt.Strategy(
         "etf_rotation",
         [bt.algos.RunDaily(), _CashInterest(cash_rate),
-         bt.algos.WeighTarget(w), bt.algos.Rebalance()],
+         bt.algos.WeighTarget("target_weights"), bt.algos.Rebalance()],
     )
     backtest = bt.Backtest(
         strat,
@@ -78,6 +78,7 @@ def run(weights, open_price, close_price, cost_bps=8, cash_rate=0.018):
         commissions=_flat_commission(cost_bps),
         integer_positions=False,
         progress_bar=False,
+        additional_data={"target_weights": w},
     )
     result = bt.run(backtest)
     name = backtest.name
