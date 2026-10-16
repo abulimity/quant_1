@@ -31,3 +31,19 @@ def test_apply_overheat_removes_overheated():
     llt80_d = pd.Series({"A": 10.0, "B": 10.0})
     out = pipe._apply_overheat(target, close_d, llt80_d, 0.2)
     assert "A" not in out and out["B"] == 0.2
+
+
+def test_range_score_boosts_active_oversold():
+    mom = pd.Series({"A": 0.5, "B": 0.5})
+    zbias = pd.Series({"A": -1.0, "B": 0.0})
+    active = pd.Series({"A": True, "B": False})
+    score = pipe._range_score(mom, zbias, active)
+    assert score["A"] > score["B"]
+
+
+def test_range_score_no_active_falls_back_to_momentum_order():
+    mom = pd.Series({"A": 0.9, "B": 0.1})
+    zbias = pd.Series({"A": 0.0, "B": 0.0})
+    active = pd.Series({"A": False, "B": False})
+    score = pipe._range_score(mom, zbias, active)
+    assert score["A"] > score["B"]

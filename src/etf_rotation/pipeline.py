@@ -165,14 +165,34 @@ def _precompute_signals(close, opn, amt, indices, params, cat) -> dict:
     def_tickers = [t for t, c in cat.items() if c in ("bond", "money") and t in close.columns]
     # 每只风险 ETF 的 80 日 LLT（列式 apply，用于单 ETF 过热退出）
     llt80 = close[risk_tickers].apply(lambda s: ms.llt(s, params["risk"]["llm80_alpha"]))
+    # 反转面板：14 日 EMA 偏离经 170 日滚动 z-score（均值/标准差 .shift(1) 防前视）
+    ema = close[risk_tickers].ewm(span=params["reversal"]["ema_span"], adjust=False).mean()
+    logbias = np.log(close[risk_tickers] / ema)
+    mu = logbias.rolling(params["reversal"]["z_window"]).mean().shift(1)
+    sd = logbias.rolling(params["reversal"]["z_window"]).std().shift(1)
+    zbias = (logbias - mu) / sd
+    rev_active = (zbias <= params["reversal"]["zbias_threshold"]) & (
+        zbias > zbias.shift(params["reversal"]["repair_lookback"]))
 
     return dict(
         m21=m21, m60=m60, ret=ret, vol60=vol60, n_days=n_days, avg20=avg20,
         regime=regime, nas_mom=nas_mom, gold_mom=gold_mom, nas_vol=nas_vol,
         gold_vol=gold_vol, cyb_vol=cyb_vol, cyb_below=cyb_below, cyb_drop=cyb_drop,
-        llt80=llt80, close=close,
+        llt80=llt80, close=close, zbias=zbias, rev_active=rev_active,
         risk_tickers=risk_tickers, def_tickers=def_tickers, cat=cat,
     )
+
+
+def _zscore(s: pd.Series) -> pd.Series:
+    """横截面 z-score（ddof=0）；无波动时返回全零，保持排序稳定。"""
+    sd = s.std(ddof=0)
+    return (s - s.mean()) / sd if sd > 0 else pd.Series(0.0, index=s.index)
+
+
+def _range_score(mom_rank, zbias, active):
+    """震荡市综合分：动量分与反转分各自横截面 z-score 后 50/50 相加（H5/H6）。"""
+    rev = (-zbias).where(active, 0.0)
+    return _zscore(mom_rank) + _zscore(rev)
 
 
 def _apply_overheat(target, close_d, llt80_d, pct):
@@ -228,9 +248,15 @@ def _daily_target(i: int, d, sig: dict, params: dict,
         ]
         if elig:
             # 横截面排名：21 日动量 70% + 60 日动量 30%；21 日动量为负剔除
-            m = 0.7 * m21.loc[d, elig].rank(pct=True) + 0.3 * m60.loc[d, elig].rank(pct=True)
-            m = m[m21.loc[d, elig] > 0].sort_values(ascending=False)
-            cands = list(m.index[: 3 * params["dedupe"]["max_holdings"]])
+            mom = 0.7 * m21.loc[d, elig].rank(pct=True) + 0.3 * m60.loc[d, elig].rank(pct=True)
+            mom = mom[m21.loc[d, elig] > 0]
+            # 震荡市叠加反转分（H5/H6），其余市场状态沿用纯动量排名
+            if regime.loc[d] == "range":
+                score = _range_score(mom, sig["zbias"].loc[d, mom.index],
+                                     sig["rev_active"].loc[d, mom.index])
+            else:
+                score = mom
+            cands = list(score.sort_values(ascending=False).index[: 3 * params["dedupe"]["max_holdings"]])
             # 相关性去重（0.80）→ 持仓上限 10 → HRP 配权
             corr = ret[cands].loc[:d].tail(250).corr()
             keep = dedupe.dedupe(cands, corr, params["dedupe"]["corr_threshold"],
