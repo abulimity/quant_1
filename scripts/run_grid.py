@@ -30,10 +30,7 @@ def main() -> None:
     ap.add_argument("--end", default="2026-07-31")
     args = ap.parse_args()
 
-    grid = {}
-    for spec in args.grid:
-        k, v = spec.split("=", 1)
-        grid[k] = [float(x) for x in v.split(",")]  # --grid 形如 a.b=0.7,0.8,0.9
+    grid = {k: v for k, v in (sensitivity.parse_grid_spec(s) for s in args.grid)}
 
     ctx = load_context()
     close_all, opn_all = ctx["close"], ctx["opn"]
@@ -65,6 +62,17 @@ def main() -> None:
     }
     (ROOT / "reports" / "grid.json").write_text(
         json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
+    sens_dir = ROOT / "reports" / "sensitivity"
+    sens_dir.mkdir(exist_ok=True)
+    key = list(grid)[0]
+    (sens_dir / f"{key.replace('.', '_')}.json").write_text(
+        json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
+    summary_path = ROOT / "reports" / "sensitivity_summary.json"
+    summary = json.loads(summary_path.read_text(encoding="utf-8")) if summary_path.exists() else {}
+    summary[key] = {"n_trials": n, "robustness": out["robustness"],
+                    "cliffs": out["cliffs"], "dsr": out["dsr"],
+                    "sharpe_haircut": overfitting.sharpe_haircut(sharpes)}
+    summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps({k: out[k] for k in ("n_trials", "robustness", "cliffs", "dsr")},
                      ensure_ascii=False, indent=2))
 

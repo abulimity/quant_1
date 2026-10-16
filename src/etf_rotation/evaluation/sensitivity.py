@@ -2,6 +2,16 @@
 import itertools
 
 import pandas as pd
+import yaml
+
+
+def parse_grid_spec(spec: str) -> tuple[str, list]:
+    """--grid 参数解析：标量逗号分隔，或以 [ ... ] 表示的列表参数。"""
+    key, raw = spec.split("=", 1)
+    raw = raw.strip()
+    if raw.startswith("["):
+        return key, yaml.safe_load(raw)
+    return key, [float(x) for x in raw.split(",")]
 
 
 def sweep(run_fn, grid: dict) -> pd.DataFrame:
