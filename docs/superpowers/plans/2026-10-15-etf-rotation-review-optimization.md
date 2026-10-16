@@ -1,6 +1,6 @@
 # 代码审阅优化 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 按 `docs/代码审阅意见.md` 的 12 条意见完成回测代码优化：行为不变的重构、以 bt 内置统计作为唯一回测评估来源、参数管理与实验登记、引擎化交易/持仓导出、数据 curation，以及敏感性与稳健性评估。
 
@@ -13,6 +13,25 @@
 - `docs/代码审阅手册.md`（补充背景与已修复项：§8.1/§8.2 已在 HEAD 修复）
 - `docs/superpowers/specs/2026-10-10-etf-rotation-design.md`（策略机制与 H1–H10 口径）
 - `AGENTS.md`（项目纪律与命令入口）
+
+## 完成记录
+
+> 状态：全部 10 个任务已完成，所有步骤 checkbox 已勾选。全量单测 41 passed；基准（计入 8bp 成本）为年化 12.48% / 最大回撤 -12.98% / Sharpe 1.06 / Calmar 0.96；样本外子区间结果见 `reports/回测报告.md`。
+
+| Task | 提交 | 说明 |
+|---|---|---|
+| 1 | `61fb44b` | 行为不变，权重/指标与基线逐值一致 |
+| 2 | `7b71a41` | 偏离计划：`WeighTarget` 实际修复了 `_DailyWeights` 持仓放大 bug，基准由 13.64% 变为 13.00%（用户确认保留修复） |
+| 3 | `f95ccc2`、`25f8a55` | 偏离计划：ffn `daily_vol/daily_sharpe/daily_sortino` 已是年化口径，改为直接取值（计划文本已同步修正） |
+| 4 | `2a3b72f` | |
+| 5 | `7c213c2` | |
+| 6 | `62ad8f1` | |
+| 7 | `fbd2ba4` | warehouse 读数与原 bronze 输出逐值一致 |
+| 8 | `8bf009e` | |
+| 9 | `185926e` | 子区间 2019–2023 vs 2024–2026 已记录 |
+| 10 | `f1cb8a9`、`23f722f` | 报告/TODO 已更新；搁置项已并入 `TODO.md` |
+
+不在本计划 10 个任务内、另行搁置的内容（见 `TODO.md`）：T+1 开盘成交、跳空顺延、停牌，以及 `open_price` 死参数接入或移除。
 
 ## Global Constraints
 
@@ -42,7 +61,7 @@
   - `_combine_phases(phase_weights: list[pd.Series]) -> pd.Series`
 - `build_weights(params, start, end) -> pd.DataFrame` 签名与返回值不变。
 
-- [ ] **Step 1: 保存基准产物**
+- [x] **Step 1: 保存基准产物**
 
 ```powershell
 $env:PYTHONIOENCODING="utf-8"
@@ -51,7 +70,7 @@ Copy-Item reports\weights.parquet reports\weights.baseline.parquet
 Copy-Item reports\metrics.json reports\metrics.baseline.json
 ```
 
-- [ ] **Step 2: 写失败测试**
+- [x] **Step 2: 写失败测试**
 
 新建 `tests/test_pipeline.py`：
 
@@ -68,12 +87,12 @@ def test_combine_phases_means_snapshots():
     pd.testing.assert_series_equal(out, pd.Series({"X": 0.8, "Y": 0.2}))
 ```
 
-- [ ] **Step 3: 运行测试确认失败**
+- [x] **Step 3: 运行测试确认失败**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_pipeline.py -q`
 Expected: FAIL（`ImportError: cannot import name '_combine_phases'`）
 
-- [ ] **Step 4: 抽取三个函数并重写循环**
+- [x] **Step 4: 抽取三个函数并重写循环**
 
 在 `pipeline.py` 中：
 
@@ -159,7 +178,7 @@ def build_weights(params: dict, start: str, end: str) -> pd.DataFrame:
 
 注意：`_daily_target` 内的 `i >= 170`（风险池）与 `i >= 60`（防守仓）判断原样保留。
 
-- [ ] **Step 5: 运行测试与回归对比**
+- [x] **Step 5: 运行测试与回归对比**
 
 ```powershell
 .venv\Scripts\python.exe -m pytest tests -q
@@ -169,7 +188,7 @@ def build_weights(params: dict, start: str, end: str) -> pd.DataFrame:
 
 Expected: pytest 全绿，diff 输出 `IDENTICAL`。
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add src/etf_rotation/pipeline.py tests/test_pipeline.py
@@ -189,7 +208,7 @@ git commit -m "refactor: split build_weights into precompute/daily/phase helpers
 - Produces: `_CashInterest(bt.Algo)`；`run()` 内部算法链变为
   `[RunDaily(), _CashInterest(cash_rate), bt.algos.WeighTarget(w), bt.algos.Rebalance()]`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 在 `tests/test_backtest.py` 追加：
 
@@ -203,12 +222,12 @@ def test_cash_interest_accrues():
     assert res["nav"].is_monotonic_increasing
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_backtest.py -q`
 Expected: FAIL（全现金但当前 `_DailyWeights` 只对 `target.capital` 计息一次/或断言不过）
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 将 `run.py` 中 `_DailyWeights` 替换为：
 
@@ -239,7 +258,7 @@ class _CashInterest(bt.Algo):
 与原先「归一化 + temp['cash']」等价；`w` 已 reindex 到 `close_price.index` 且 fillna(0)，故
 `target.now in weights.index` 恒成立。
 
-- [ ] **Step 4: 运行测试确认通过 + 回归**
+- [x] **Step 4: 运行测试确认通过 + 回归**
 
 ```powershell
 .venv\Scripts\python.exe -m pytest tests/test_backtest.py -q
@@ -248,7 +267,7 @@ class _CashInterest(bt.Algo):
 
 Expected: 测试全绿；`reports/metrics.json` 与 Task 1 后的基线一致（若已做 Task 3 前基线）。
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add src/etf_rotation/backtest/run.py tests/test_backtest.py
@@ -269,7 +288,7 @@ git commit -m "refactor: split cash interest from target-weight algo via WeighTa
 - Produces: `metrics.from_stats(stats: pd.Series) -> dict`
 - Removes: `metrics.summary`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 将 `tests/test_metrics.py` 中的 `test_summary_known_series` 替换为：
 
@@ -299,12 +318,12 @@ def test_dsr_high_for_many_bad_trials():
     assert 0 <= p <= 1
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_metrics.py -q`
 Expected: FAIL（`metrics` 无 `from_stats`）
 
-- [ ] **Step 3: 实现 `from_stats` 与 `BacktestResult`**
+- [x] **Step 3: 实现 `from_stats` 与 `BacktestResult`**
 
 `src/etf_rotation/evaluation/metrics.py` 整体替换为：
 
@@ -359,7 +378,7 @@ class BacktestResult:
     )
 ```
 
-- [ ] **Step 4: 更新调用方**
+- [x] **Step 4: 更新调用方**
 
 `scripts/run_backtest.py`：
 
@@ -389,7 +408,7 @@ class BacktestResult:
 `res["nav"]`/`res["returns"]` → `res.nav`/`res.returns`，并把
 `metrics.summary(res["returns"])` 改为 `metrics.from_stats(res.stats)`。
 
-- [ ] **Step 5: 运行测试与基准回归**
+- [x] **Step 5: 运行测试与基准回归**
 
 ```powershell
 .venv\Scripts\python.exe -m pytest tests -q
@@ -400,7 +419,7 @@ class BacktestResult:
 Expected: pytest 全绿；`metrics.json` 出现 `ann_return/ann_vol/sharpe/sortino/max_drawdown/calmar/turnover`，
 不再有 `var_95/cvar_95`。记下新的 `ann_return/sortino/calmar/turnover` 数值（年化收益改 `cagr`、换手改引擎单边口径，见 Task 10 文档）。
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add src/etf_rotation/backtest/run.py src/etf_rotation/evaluation/metrics.py scripts/run_backtest.py scripts/run_sensitivity.py tests/test_metrics.py tests/test_backtest.py tests/test_integration.py
@@ -419,7 +438,7 @@ git commit -m "refactor: use bt built-in stats as sole backtest metric source"
 - Produces: `config.set_nested(params: dict, path: str, value: str) -> None`
 - Produces: `config.flatten_params(params: dict) -> dict`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 `tests/test_config.py` 追加：
 
@@ -435,12 +454,12 @@ def test_set_nested_and_flatten():
     assert flat["trend.windows"] == [21, 63]
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_config.py -q`
 Expected: FAIL（`config` 无 `set_nested`）
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 `src/etf_rotation/config.py` 追加：
 
@@ -504,7 +523,7 @@ def main() -> None:
     ...
 ```
 
-- [ ] **Step 4: 运行测试 + 冒烟**
+- [x] **Step 4: 运行测试 + 冒烟**
 
 ```powershell
 .venv\Scripts\python.exe -m pytest tests/test_config.py -q
@@ -513,7 +532,7 @@ def main() -> None:
 
 Expected: 测试全绿；第二行不报错且打印出不同指标的 metrics（先观察是否运行成功，随后回滚到默认值不再深究）。
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add src/etf_rotation/config.py scripts/run_backtest.py tests/test_config.py
@@ -534,7 +553,7 @@ git commit -m "feat: add dotted-key param override and flatten_params"
 - Produces: `registry.git_sha() -> str`
 - Produces: `registry.register_run(db_path: Path, run_id: str, params: dict, metrics: dict, artifacts: dict) -> None`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 `tests/test_registry.py`：
 
@@ -571,12 +590,12 @@ def test_register_run_writes_rows(tmp_path: Path, monkeypatch):
 说明：`register_run` 的 manifest 目录通过 `report_root` 参数传入（默认 `Path("reports")`），
 测试用 `monkeypatch.chdir(tmp_path)` + 显式 `report_root` 隔离，避免污染仓库 `reports/`。
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_registry.py -q`
 Expected: FAIL（`registry` 模块不存在）
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 `src/etf_rotation/evaluation/registry.py`：
 
@@ -658,7 +677,7 @@ def register_run(db_path: Path, run_id: str, params: dict, metrics: dict,
     print(f"registered run {run_id}")
 ```
 
-- [ ] **Step 4: 运行测试 + 两次登记验证**
+- [x] **Step 4: 运行测试 + 两次登记验证**
 
 ```powershell
 .venv\Scripts\python.exe -m pytest tests/test_registry.py -q
@@ -669,7 +688,7 @@ def register_run(db_path: Path, run_id: str, params: dict, metrics: dict,
 Expected: 测试全绿；`runs` 出现一行、`run_metrics` 出现本次各指标；`reports/runs/{run_id}/manifest.json` 存在。
 再次运行相同命令，run_id 不变（幂等覆盖）。
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add src/etf_rotation/evaluation/registry.py scripts/run_backtest.py tests/test_registry.py
@@ -688,7 +707,7 @@ git commit -m "feat: add content-addressed run registry into warehouse duckdb"
 - Produces: `trades.build_trade_table_from_engine(transactions: pd.DataFrame, cost_bps: float = 8.0) -> pd.DataFrame`
 - Removes: `trades.build_trade_table`（权重差分的推导版）
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 将 `tests/test_trades.py` 整体替换为：
 
@@ -712,12 +731,12 @@ def test_build_trade_table_from_engine():
     assert set(t.columns) >= {"date", "ticker", "side", "price", "quantity", "notional", "cost"}
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_trades.py -q`
 Expected: FAIL（`build_trade_table_from_engine` 不存在）
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 `src/etf_rotation/evaluation/trades.py` 整体替换为：
 
@@ -762,7 +781,7 @@ def build_trade_table_from_engine(
 `tests/test_integration.py` 把 `trades.build_trade_table(eff, res.nav)` 改为
 `trades.build_trade_table_from_engine(res.result.get_transactions())`。
 
-- [ ] **Step 4: 运行测试与全链路**
+- [x] **Step 4: 运行测试与全链路**
 
 ```powershell
 .venv\Scripts\python.exe -m pytest tests -q
@@ -773,7 +792,7 @@ def build_trade_table_from_engine(
 Expected: 测试全绿；`reports/transactions.csv`、`reports/holdings.csv` 生成；
 `reports/trades.csv` 的 `cost` 合计与 `回测报告.md` 中「合计成本」口径一致（引擎佣金同公式）。
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add src/etf_rotation/evaluation/trades.py scripts/run_backtest.py scripts/run_report.py tests/test_trades.py tests/test_integration.py
@@ -795,7 +814,7 @@ git commit -m "refactor: derive trades and holdings from bt engine results"
 - Produces: `pipeline._load_prices_from_bronze()`（原 `load_prices` 改名后的回退实现）
 - `load_prices()` 优先读 warehouse，为空回退 bronze；`calendar.trading_days` 优先读 `trading_calendar`，为空回退 bars 去重。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 `tests/test_calendar.py` 追加：
 
@@ -828,12 +847,12 @@ def test_build_trading_calendar():
     assert (cal["is_open"]).all()
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_calendar.py tests/test_curate.py -q`
 Expected: FAIL（`calendar.WAREHOUSE` / `curate.build_trading_calendar` 不存在）
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 `src/etf_rotation/data/paths.py` 追加：
 
@@ -937,7 +956,7 @@ def load_prices():
 顶部加 `from etf_rotation.data.paths import WAREHOUSE`，并在 `trading_days` 内引用模块级 `WAREHOUSE`
 （这样测试的 `monkeypatch.setattr(calendar, "WAREHOUSE", db)` 才能生效）。
 
-- [ ] **Step 4: 运行 curation 与一致性核对**
+- [x] **Step 4: 运行 curation 与一致性核对**
 
 ```powershell
 .venv\Scripts\python.exe -m pytest tests -q
@@ -948,7 +967,7 @@ def load_prices():
 
 Expected: pytest 全绿；curation 打印行数；`weights.parquet` 与基线逐值一致。
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add src/etf_rotation/data/paths.py src/etf_rotation/data/curate.py src/etf_rotation/data/calendar.py src/etf_rotation/pipeline.py scripts/curate_data.py tests/test_calendar.py tests/test_curate.py
@@ -968,7 +987,7 @@ git commit -m "feat: curate bronze parquet into warehouse duckdb for prices/cale
 - Produces: `sensitivity.robustness_score(results: pd.DataFrame, metric: str = "sharpe") -> float`
 - Produces: `sensitivity.detect_cliffs(results: pd.DataFrame, params: list[str], metric: str = "sharpe") -> dict`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 `tests/test_sensitivity.py`：
 
@@ -988,12 +1007,12 @@ def test_robustness_and_cliffs():
     assert "lookback" in sensitivity.detect_cliffs(r, ["lookback"])
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_sensitivity.py -q`
 Expected: FAIL（函数不存在）
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 `src/etf_rotation/evaluation/sensitivity.py` 追加：
 
@@ -1081,7 +1100,7 @@ if __name__ == "__main__":
     main()
 ```
 
-- [ ] **Step 4: 运行测试 + 单参数冒烟**
+- [x] **Step 4: 运行测试 + 单参数冒烟**
 
 ```powershell
 .venv\Scripts\python.exe -m pytest tests/test_sensitivity.py -q
@@ -1090,7 +1109,7 @@ if __name__ == "__main__":
 
 Expected: 测试全绿；`reports/grid.json` 含 3 行结果 + robustness/cliffs/dsr。
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add src/etf_rotation/evaluation/sensitivity.py scripts/run_grid.py tests/test_sensitivity.py
@@ -1108,7 +1127,7 @@ git commit -m "feat: add grid sensitivity with robustness score and cliff detect
 **Interfaces:**
 - Produces: `overfitting.sharpe_haircut(sharpes: list[float]) -> dict`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 `tests/test_metrics.py` 追加：
 
@@ -1120,12 +1139,12 @@ def test_sharpe_haircut_returns_expected_max():
     assert h["haircut"] == pytest.approx(h["observed_best"] - h["expected_max"])
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/test_metrics.py -q`
 Expected: FAIL（`sharpe_haircut` 不存在）
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 `src/etf_rotation/evaluation/overfitting.py` 追加：
 
@@ -1146,7 +1165,7 @@ def sharpe_haircut(sharpes) -> dict:
     return {"observed_best": observed, "expected_max": expected, "haircut": observed - expected}
 ```
 
-- [ ] **Step 4: 样本外子区间（命令步骤，不新增代码）**
+- [x] **Step 4: 样本外子区间（命令步骤，不新增代码）**
 
 选定时任一候选参数后，跑两个子区间（规则驱动无训练集，用时间子区间近似 OOS）：
 
@@ -1157,7 +1176,7 @@ def sharpe_haircut(sharpes) -> dict:
 
 记录两个子区间的 `sharpe/max_drawdown/calmar`，写入 Task 10 的 `reports/回测报告.md`。
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add src/etf_rotation/evaluation/overfitting.py tests/test_metrics.py
@@ -1171,7 +1190,7 @@ git commit -m "feat: add sharpe haircut for multiple-testing correction"
 **Files:**
 - Modify: `reports/回测报告.md`、`TODO.md`（若存在待办清单）
 
-- [ ] **Step 1: 更新 `reports/回测报告.md` 的「已知差异」**
+- [x] **Step 1: 更新 `reports/回测报告.md` 的「已知差异」**
 
 新增/替换以下条目：
 
@@ -1182,11 +1201,11 @@ git commit -m "feat: add sharpe haircut for multiple-testing correction"
 - 五相位：明确为「目标平滑」（5 相位等权汇总、单账户），不使用 bt 策略树；若未来改为独立资金子账户再启用策略树。
 - 未接入主线的反转/整组迟滞/跳空顺延/单 ETF 过热退出/34% 组合波动目标：保持已知简化，单独立项。
 
-- [ ] **Step 2: 更新 `TODO.md`**
+- [x] **Step 2: 更新 `TODO.md`**
 
 把「阶段 B 参数搜索」「执行精度（T+1 开盘 + 跳空 + 停牌）」按本计划状态勾选或标注「另立」。
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```powershell
 git add reports/回测报告.md TODO.md
