@@ -40,6 +40,7 @@ def main() -> None:
                   cash_rate=p["costs"]["cash_rate_annual"])
     s = metrics.from_stats(res.stats)
     s["turnover"] = float(res.turnover.mean())
+    s["total_fees"] = float(res.fees.sum())
     print(json.dumps({k: (round(v, 6) if isinstance(v, float) else v) for k, v in s.items()},
                      ensure_ascii=False, indent=2))
     out = ROOT / "reports"

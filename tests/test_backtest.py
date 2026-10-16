@@ -4,6 +4,7 @@ import pytest
 
 from etf_rotation.backtest import run
 from etf_rotation.backtest.run import _flat_commission
+from etf_rotation.evaluation import trades
 
 
 def test_buy_and_hold_nav_matches_price():
@@ -75,4 +76,19 @@ def test_weigh_target_binds_by_name():
     close = pd.DataFrame({"X": [10.0, 11.0, 12.0, 13.0, 14.0]}, index=idx)
     res = run.run(w.shift(1).fillna(0.0), close, close, cost_bps=0, cash_rate=0)
     assert abs(res.nav.iloc[-1] - 14.0 / 11.0) < 1e-9
+
+
+def test_trade_cost_reconciles_with_engine_fees():
+    idx = pd.date_range("2024-01-01", periods=60)
+    rng = np.random.default_rng(0)
+    close = pd.DataFrame(
+        {"A": np.cumprod(1 + rng.normal(0, 0.008, 60)),
+         "B": np.cumprod(1 + rng.normal(0, 0.006, 60))},
+        index=idx,
+    )
+    w = pd.DataFrame({"A": 0.5, "B": 0.5}, index=idx)
+    eff = w.shift(1).fillna(0.0)
+    res = run.run(eff, close, close, cost_bps=8, cash_rate=0.018)
+    t = trades.build_trade_table_from_engine(res.result.get_transactions(), cost_bps=8)
+    assert t["cost"].sum() == pytest.approx(res.fees.sum(), abs=1e-9)
 

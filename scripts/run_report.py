@@ -86,6 +86,9 @@ def main() -> None:
 
 
 def _build_md(metrics: dict, t: pd.DataFrame) -> str:
+    # 合计成本以引擎 fees 为准（run_backtest 落进 metrics.json）；
+    # 兼容旧 metrics.json：缺 total_fees 时回退到逐笔估算合计。
+    fees = metrics.get("total_fees", float(t["cost"].sum()))
     lines = [
         M_START,
         "",
@@ -93,7 +96,8 @@ def _build_md(metrics: dict, t: pd.DataFrame) -> str:
         "",
         "- [打开交互式可视化报告](可视化报告.html)（自包含、离线可用）",
         f"- [交易明细 CSV](trades.csv)：共 {len(t)} 笔，买入 {(t['side'] == '买入').sum()} 笔 / "
-        f"卖出 {(t['side'] == '卖出').sum()} 笔，合计成本 {t['cost'].sum():.4f}（引擎成交口径）",
+        f"卖出 {(t['side'] == '卖出').sum()} 笔，合计成本 {fees:.4f}（引擎 fees 口径，"
+        f"逐笔估算合计 {t['cost'].sum():.4f}）",
         "",
         f"- 年化收益 {metrics['ann_return']:.2%}，最大回撤 {metrics['max_drawdown']:.2%}，"
         f"Sharpe {metrics['sharpe']:.2f}，Calmar {metrics['calmar']:.2f}",
