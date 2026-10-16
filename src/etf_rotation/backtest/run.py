@@ -20,6 +20,9 @@ class BacktestResult:
     returns: pd.Series
     stats: pd.Series
     turnover: pd.Series
+    cash: pd.Series
+    positions: pd.DataFrame
+    fees: pd.Series
     result: bt.backtest.Result
 
 
@@ -86,11 +89,19 @@ def run(weights, open_price, close_price, cost_bps=8, cash_rate=0.018):
         # PerformanceWarning（性能提示，非正确性问题），这里只在该访问点屏蔽。
         warnings.simplefilter("ignore", pd.errors.PerformanceWarning)
         turnover = backtest.turnover
+    # trading_index 即真实交易日，用于去掉 bt 注入的 t0-1 bootstrap 行
+    trading_index = close_price.index
+    cash = backtest.strategy.cash.reindex(trading_index)
+    fees = backtest.strategy.fees.reindex(trading_index)
+    positions = backtest.positions.reindex(trading_index)
     return BacktestResult(
         nav=nav,
         returns=returns,
         stats=result.stats[name],
         turnover=turnover,
+        cash=cash,
+        positions=positions,
+        fees=fees,
         result=result,
     )
 

@@ -28,3 +28,23 @@ def test_flat_commission_formula():
     assert fn(100, 2.0) == pytest.approx(100 * 2.0 * 8 / 10000.0)
     assert fn(-100, 2.0) == pytest.approx(100 * 2.0 * 8 / 10000.0)
 
+
+def test_result_exposes_engine_cash_positions_fees():
+    idx = pd.date_range("2024-01-01", periods=30)
+    w = pd.DataFrame({"X": 0.5, "Y": 0.5}, index=idx)
+    close = pd.DataFrame(
+        {"X": pd.Series(10.0, index=idx) + pd.Series(range(30), index=idx) * 0.1,
+         "Y": 20.0 - pd.Series(range(30), index=idx) * 0.05},
+        index=idx,
+    )
+    res = run.run(w, close, close, cost_bps=8, cash_rate=0.018)
+    assert res.cash.index.equals(close.index)
+    assert res.positions.index.equals(close.index)
+    assert res.fees.index.equals(close.index)
+    assert set(res.positions.columns) == {"X", "Y"}
+    assert res.fees.sum() > 0
+    # 目标权重满仓（Σw=1）→ 现金记账为 0，佣金再从这条空现金线上扣，
+    # 残差仅为浮点噪声（约 1e-10），不代表杠杆；用噪声级容差锁定「未放大仓位」。
+    assert (res.cash >= -1e-9).all()
+    assert res.cash.abs().max() < 1e-6
+
