@@ -106,5 +106,19 @@ def test_signal_cache_key_changes_with_window():
     assert pipe.signal_cache_key(p1) != pipe.signal_cache_key(p2)
 
 
+def test_signal_cache_key_changes_with_bull_threshold():
+    p1 = config.load_params()
+    p2 = config.load_params()
+    p2["market_state"]["bull_threshold"] = 0.30
+    assert pipe.signal_cache_key(p1) != pipe.signal_cache_key(p2)
+
+
+def test_signal_cache_key_changes_with_reversal():
+    p1 = config.load_params()
+    p2 = config.load_params()
+    p2["reversal"]["zbias_threshold"] = -0.6
+    assert pipe.signal_cache_key(p1) != pipe.signal_cache_key(p2)
+
+
 def test_load_context_is_cached():
     assert pipe.load_context() is pipe.load_context()
