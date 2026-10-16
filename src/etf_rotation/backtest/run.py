@@ -81,8 +81,10 @@ def run(weights, open_price, close_price, cost_bps=8, cash_rate=0.018):
     )
     result = bt.run(backtest)
     name = backtest.name
-    values = backtest.strategy.values.reindex(close_price.index).ffill()
-    nav = values / values.iloc[0]
+    # 官方净值曲线：Result.prices 即 ffn GroupStats 的价格指数（起点 PAR=100）。
+    # 只丢弃 bt 在 t0-1 注入的 bootstrap 行，保持输出索引与真实交易日一致。
+    prices = result.prices[name].reindex(close_price.index)
+    nav = prices / prices.iloc[0]
     returns = nav.pct_change(fill_method=None).fillna(nav.iloc[0] - 1)
     with warnings.catch_warnings():
         # bt 在访问 outlays 时会对多标的宽表逐列 insert，触发 pandas 的

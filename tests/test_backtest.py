@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -47,4 +48,23 @@ def test_result_exposes_engine_cash_positions_fees():
     # 残差仅为浮点噪声（约 1e-10），不代表杠杆；用噪声级容差锁定「未放大仓位」。
     assert (res.cash >= -1e-9).all()
     assert res.cash.abs().max() < 1e-6
+
+
+def test_nav_uses_result_prices():
+    idx = pd.date_range("2024-01-01", periods=60)
+    rng = np.random.default_rng(0)
+    close = pd.DataFrame(
+        {"A": np.cumprod(1 + rng.normal(0, 0.008, 60)),
+         "B": np.cumprod(1 + rng.normal(0, 0.006, 60))},
+        index=idx,
+    )
+    w = pd.DataFrame({"A": 0.5, "B": 0.5}, index=idx)
+    eff = w.shift(1).fillna(0.0)
+    res = run.run(eff, close, close, cost_bps=8, cash_rate=0.018)
+    official = res.result.prices["etf_rotation"].reindex(close.index)
+    # 只锁数值等价：自算净值与官方 Result.prices 已一致到机器精度（约 2e-16），
+    # 差异仅在 Series.name（自算为 "value"，官方为回测名），无下游消费者读取该 name。
+    pd.testing.assert_series_equal(
+        res.nav, official / official.iloc[0], rtol=1e-12, atol=1e-12, check_names=False
+    )
 
