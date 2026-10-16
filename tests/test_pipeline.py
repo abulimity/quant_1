@@ -23,3 +23,11 @@ def test_portfolio_vol_cap_only_shrinks():
     rets_low = [0.0001, -0.0001] * 5
     out_low, scale_low = pipe._apply_portfolio_vol_cap(cand, rets_low, params)
     assert scale_low == 1.0 and (out_low == cand).all()
+
+
+def test_apply_overheat_removes_overheated():
+    target = {"A": 0.3, "B": 0.2}
+    close_d = pd.Series({"A": 12.0, "B": 10.0})
+    llt80_d = pd.Series({"A": 10.0, "B": 10.0})
+    out = pipe._apply_overheat(target, close_d, llt80_d, 0.2)
+    assert "A" not in out and out["B"] == 0.2

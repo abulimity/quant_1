@@ -163,13 +163,26 @@ def _precompute_signals(close, opn, amt, indices, params, cat) -> dict:
     # 风险池与防守池（逐日 point-in-time 资格）
     risk_tickers = [t for t, c in cat.items() if c == "risk" and t in close.columns]
     def_tickers = [t for t, c in cat.items() if c in ("bond", "money") and t in close.columns]
+    # 每只风险 ETF 的 80 日 LLT（列式 apply，用于单 ETF 过热退出）
+    llt80 = close[risk_tickers].apply(lambda s: ms.llt(s, params["risk"]["llm80_alpha"]))
 
     return dict(
         m21=m21, m60=m60, ret=ret, vol60=vol60, n_days=n_days, avg20=avg20,
         regime=regime, nas_mom=nas_mom, gold_mom=gold_mom, nas_vol=nas_vol,
         gold_vol=gold_vol, cyb_vol=cyb_vol, cyb_below=cyb_below, cyb_drop=cyb_drop,
+        llt80=llt80, close=close,
         risk_tickers=risk_tickers, def_tickers=def_tickers, cat=cat,
     )
+
+
+def _apply_overheat(target, close_d, llt80_d, pct):
+    """单 ETF 过热退出：收盘价 ≥ 自身 80 日 LLT × (1+pct) 时权重归零。"""
+    out = dict(target)
+    for t in list(out):
+        c, l = close_d.get(t), llt80_d.get(t)
+        if pd.notna(c) and pd.notna(l) and c >= l * (1 + pct):
+            out.pop(t, None)
+    return out
 
 
 def _daily_target(i: int, d, sig: dict, params: dict,
@@ -231,6 +244,10 @@ def _daily_target(i: int, d, sig: dict, params: dict,
                     target[t] = float(v) * risk_budget
             elif len(keep) == 1:
                 target[keep[0]] = risk_budget
+    # 单 ETF 过热退出：风险资产 HRP 配权后、纳指/黄金之前归零过热标的
+    target = _apply_overheat(
+        target, sig["close"].loc[d], sig["llt80"].loc[d],
+        params["risk"]["overheat_pct"])
     if base["nasdaq"] > 0:
         # 纳指按 60 日波动向 18% 目标缩放（只减不加）
         v = risk_layers.vol_scale(float(nas_vol.loc[d]) if pd.notna(nas_vol.loc[d]) else 0.0,
