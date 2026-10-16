@@ -11,7 +11,7 @@ def parse_grid_spec(spec: str) -> tuple[str, list]:
     raw = raw.strip()
     if raw.startswith("["):
         return key, yaml.safe_load(raw)
-    return key, [float(x) for x in raw.split(",")]
+    return key, [yaml.safe_load(x) for x in raw.split(",")]
 
 
 def sweep(run_fn, grid: dict) -> pd.DataFrame:

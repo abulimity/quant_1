@@ -22,6 +22,13 @@ def test_parse_grid_spec():
     assert k2 == "trend.windows" and v2 == [[21, 60], [21, 63]]
 
 
+def test_parse_grid_spec_preserves_ints():
+    k, v = sensitivity.parse_grid_spec("dedupe.max_holdings=6,8,10,12")
+    assert k == "dedupe.max_holdings"
+    assert v == [6, 8, 10, 12]
+    assert all(isinstance(x, int) for x in v)
+
+
 def test_pivot_heatmap():
     r = pd.DataFrame({
         "corr": [0.75, 0.75, 0.85, 0.85],
