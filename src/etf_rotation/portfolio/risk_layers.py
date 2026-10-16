@@ -1,13 +1,14 @@
 """分层风控：市场状态 / A 股趋势 / 单标的过热 / 波动率控制。"""
 
 
-def risk_scale(market: str, idx_above_llt: bool, idx_drop_20d: float) -> float:
+def risk_scale(market: str, idx_above_llt: bool, idx_drop_20d: float,
+               drop_threshold: float = -0.03) -> float:
     """风险资产基础缩放：危险=0，震荡=0.95，其余 1.0；
     创业板跌破 80 日 LLT 且 LLT 20 日跌超 3% 时降至 0.05。"""
     if market == "bear":
         return 0.0
     base = 0.95 if market == "range" else 1.0
-    if (not idx_above_llt) and idx_drop_20d < -0.03:
+    if (not idx_above_llt) and idx_drop_20d < drop_threshold:
         return 0.05
     return base
 

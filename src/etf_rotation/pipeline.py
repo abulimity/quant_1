@@ -131,10 +131,12 @@ def momentum_panel(logp: pd.DataFrame, window: int) -> pd.DataFrame:
 def _precompute_signals(close, opn, amt, indices, params, cat) -> dict:
     """全历史信号预计算（保证 2019 起点也有足够 warmup；无前视）。"""
     logp = np.log(close)
-    m21 = momentum_panel(logp, 21)
-    m60 = momentum_panel(logp, 60)
+    w_short, w_long = params["trend"]["windows"]
+    m21 = momentum_panel(logp, w_short)
+    m60 = momentum_panel(logp, w_long)
     ret = close.pct_change(fill_method=None)
-    vol60 = ret.rolling(60).std() * np.sqrt(252)
+    vw = params["risk"]["vol_window"]
+    vol60 = ret.rolling(vw).std() * np.sqrt(252)
     n_days = close.notna().cumsum()
     avg20 = amt.rolling(20).mean()
 
@@ -144,6 +146,7 @@ def _precompute_signals(close, opn, amt, indices, params, cat) -> dict:
          "zz2000": indices["932000.CSI"],
          "zzhl": indices["000922.CSI"]},
         alpha=params["market_state"]["alpha"],
+        win=params["market_state"]["slope_window"],
     )
     regime = comp.map(
         lambda v: "bull" if v >= params["market_state"]["bull_threshold"]
@@ -155,12 +158,12 @@ def _precompute_signals(close, opn, amt, indices, params, cat) -> dict:
     gold = params["gold_etf"]
     nas_mom = trend.momentum_score(close[nasdaq], 60)
     gold_mom = trend.momentum_score(close[gold], 60)
-    nas_vol = close[nasdaq].pct_change(fill_method=None).ewm(span=60).std() * np.sqrt(252)
-    gold_vol = close[gold].pct_change(fill_method=None).ewm(span=60).std() * np.sqrt(252)
+    nas_vol = close[nasdaq].pct_change(fill_method=None).ewm(span=vw).std() * np.sqrt(252)
+    gold_vol = close[gold].pct_change(fill_method=None).ewm(span=vw).std() * np.sqrt(252)
 
     # A 股趋势约束：创业板指跌破 80 日 LLT 且 LLT 20 日跌超 3% → 风险仓降至 5%
     cyb = indices["399006.SZ"]
-    cyb_vol = cyb.pct_change(fill_method=None).ewm(span=60).std() * np.sqrt(252)
+    cyb_vol = cyb.pct_change(fill_method=None).ewm(span=vw).std() * np.sqrt(252)
     cyb_llt = ms.llt(cyb, params["risk"]["llm80_alpha"])
     cyb_below = cyb < cyb_llt
     cyb_drop = cyb_llt.pct_change(20, fill_method=None)
@@ -226,6 +229,8 @@ def _daily_target(i: int, d, sig: dict, params: dict,
     n_days, avg20 = sig["n_days"], sig["avg20"]
     risk_tickers, def_tickers = sig["risk_tickers"], sig["def_tickers"]
     cat = sig["cat"]
+    w_short_rk, w_long_rk = params["trend"]["rank_weights"]
+    w_hrp = params["hrp"]["window"]
 
     # 日期对齐取当日信号（勿用 .iloc[i]，见 build_weights 顶部说明）
     nas_sig = float(nas_mom.loc[d]) if pd.notna(nas_mom.loc[d]) else 0.0
@@ -236,6 +241,7 @@ def _daily_target(i: int, d, sig: dict, params: dict,
         regime.loc[d],
         bool(cyb_below.loc[d]) is False if pd.notna(cyb_below.loc[d]) else True,
         float(cyb_drop.loc[d]) if pd.notna(cyb_drop.loc[d]) else 0.0,
+        drop_threshold=params["risk"]["index_drop_20d"],
     )
     if pd.notna(cyb_vol.loc[d]):
         rscale *= risk_layers.vol_scale(float(cyb_vol.loc[d]),
@@ -257,7 +263,8 @@ def _daily_target(i: int, d, sig: dict, params: dict,
         ]
         if elig:
             # 横截面排名：21 日动量 70% + 60 日动量 30%；21 日动量为负剔除
-            mom = 0.7 * m21.loc[d, elig].rank(pct=True) + 0.3 * m60.loc[d, elig].rank(pct=True)
+            mom = (w_short_rk * m21.loc[d, elig].rank(pct=True)
+                   + w_long_rk * m60.loc[d, elig].rank(pct=True))
             mom = mom[m21.loc[d, elig] > 0]
             # 震荡市叠加反转分（H5/H6），其余市场状态沿用纯动量排名
             if regime.loc[d] == "range":
@@ -268,13 +275,13 @@ def _daily_target(i: int, d, sig: dict, params: dict,
             risk_score.loc[score.index] = score
             cands = list(score.sort_values(ascending=False).index[: 3 * params["dedupe"]["max_holdings"]])
             # 相关性去重（0.80）→ 持仓上限 10 → HRP 配权
-            corr = ret[cands].loc[:d].tail(250).corr()
+            corr = ret[cands].loc[:d].tail(w_hrp).corr()
             keep = dedupe.dedupe(cands, corr, params["dedupe"]["corr_threshold"],
                                  params["dedupe"]["max_holdings"])
             keep = [t for t in keep
-                    if ret[t].loc[:d].tail(250).notna().sum() >= 100]
+                    if ret[t].loc[:d].tail(w_hrp).notna().sum() >= 100]
             if len(keep) >= 2:
-                r = ret[keep].loc[:d].tail(250).dropna(axis=1)
+                r = ret[keep].loc[:d].tail(w_hrp).dropna(axis=1)
                 w = hrp.hrp_weights(r)
                 for t, v in w.items():
                     target[t] = float(v) * risk_budget
@@ -303,6 +310,9 @@ def _daily_target(i: int, d, sig: dict, params: dict,
                 ret[def_tickers].loc[:d].tail(250),
                 vol60.loc[d, def_tickers].dropna(),
                 {t: cat.get(t, "risk") for t in def_tickers},
+                top_n=params["defensive"]["top_n"],
+                max_vol_60d=params["defensive"]["max_vol_60d"],
+                momentum_window=params["defensive"]["momentum_window"],
             )
             last_def_update = i
         if current_defn:
