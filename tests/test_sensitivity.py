@@ -20,3 +20,14 @@ def test_parse_grid_spec():
     assert k == "dedupe.corr_threshold" and v == [0.75, 0.80, 0.85]
     k2, v2 = sensitivity.parse_grid_spec("trend.windows=[[21,60],[21,63]]")
     assert k2 == "trend.windows" and v2 == [[21, 60], [21, 63]]
+
+
+def test_pivot_heatmap():
+    r = pd.DataFrame({
+        "corr": [0.75, 0.75, 0.85, 0.85],
+        "cost": [0, 8, 0, 8],
+        "sharpe": [1.0, 0.9, 1.1, 1.0],
+    })
+    h = sensitivity.pivot_heatmap(r, "corr", "cost", "sharpe")
+    assert h.loc[0, 0.75] == 1.0
+    assert h.loc[8, 0.85] == 1.0

@@ -46,3 +46,9 @@ def detect_cliffs(results: pd.DataFrame, params: list[str], metric: str = "sharp
         }
     return out
 
+
+def pivot_heatmap(results: pd.DataFrame, x: str, y: str,
+                  metric: str = "sharpe") -> pd.DataFrame:
+    """把两个参数维度的网格结果透视成 (x × y) 的 metric 矩阵，用于孤岛/高原检测。"""
+    return results.pivot_table(index=y, columns=x, values=metric, aggfunc="mean")
+

@@ -96,6 +96,11 @@ def _build_md(metrics: dict, t: pd.DataFrame) -> str:
     # 合计成本以引擎 fees 为准（run_backtest 落进 metrics.json）；
     # 兼容旧 metrics.json：缺 total_fees 时回退到逐笔估算合计。
     fees = metrics.get("total_fees", float(t["cost"].sum()))
+    heatmap_lines = []
+    for p in sorted(REPORTS.glob("heatmap_*.html")):
+        heatmap_lines.append(f"- [打开参数敏感性热力图]({p.name})（{p.name}）")
+    if heatmap_lines:
+        heatmap_lines = ["", "### 参数敏感性热力图", ""] + heatmap_lines
     lines = [
         M_START,
         "",
@@ -106,6 +111,7 @@ def _build_md(metrics: dict, t: pd.DataFrame) -> str:
         f"卖出 {(t['side'] == '卖出').sum()} 笔，合计成本 {fees:.4f}（引擎 fees 口径，"
         f"逐笔估算合计 {t['cost'].sum():.4f}）",
         "",
+        *heatmap_lines,
         f"- 年化收益 {metrics['ann_return']:.2%}，最大回撤 {metrics['max_drawdown']:.2%}，"
         f"Sharpe {metrics['sharpe']:.2f}，Calmar {metrics['calmar']:.2f}",
         "",
