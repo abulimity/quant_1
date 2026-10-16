@@ -269,6 +269,25 @@ def _combine_phases(phase_weights: list[pd.Series]) -> pd.Series:
     return pd.concat(phase_weights, axis=1).mean(axis=1)
 
 
+def _apply_portfolio_vol_cap(candidate, port_rets, params):
+    """组合 20 日 EWMA 波动上限（只减不加）：超 34% 时整体等比缩减。
+
+    与研报 §2.6「超目标同比缩减，只减不加」一致：波动低于目标时不放大，
+    只有超过目标时才把候选权重整体等比缩减（差额转现金）。不使用
+    `bt.algos.TargetVol`（其是双向目标，会把低波动组合放大）。
+    """
+    target = params["risk"]["vol_target_portfolio"]
+    span = params["risk"]["port_vol_window"]
+    vol = 0.0
+    if port_rets:
+        vol = float(
+            pd.Series(port_rets).ewm(span=span, adjust=False).std().iloc[-1]
+            * np.sqrt(252)
+        )
+    scale = risk_layers.vol_scale(vol, target) if pd.notna(vol) and vol > 0 else 1.0
+    return candidate * scale, scale
+
+
 def build_weights(params: dict, start: str, end: str) -> pd.DataFrame:
     """计算策略目标权重面板（index=回测交易日、columns=标的、每行和 ≤ 1）。
 
@@ -292,13 +311,21 @@ def build_weights(params: dict, start: str, end: str) -> pd.DataFrame:
     weights = pd.DataFrame(0.0, index=days, columns=cols)
     last_def_update = -10**9
     current_defn: list[str] = []
+    prev_final = pd.Series(0.0, index=cols)
+    port_rets: list[float] = []
 
     for i, d in enumerate(days):
         target, last_def_update, current_defn = _daily_target(
             i, d, sig, params, last_def_update, current_defn)
         phase_weights[i % 5] = pd.Series(target).reindex(cols).fillna(0.0)
-        combined = _combine_phases(phase_weights)
-        weights.loc[d, combined.index] = combined.values
+        candidate = _combine_phases(phase_weights)
+        # port_rets 只 append「上一日最终权重 × 当日收益」，只用 ≤d 的信息（无前视）。
+        if i > 0:
+            prev_ret = float((prev_final * sig["ret"].loc[d, cols].fillna(0.0)).sum())
+            port_rets.append(prev_ret)
+        final, _ = _apply_portfolio_vol_cap(candidate, port_rets, params)
+        weights.loc[d, final.index] = final.values
+        prev_final = final
 
     return weights
 
