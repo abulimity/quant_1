@@ -14,14 +14,19 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def main() -> None:
+    """成本敏感性：复用 run_backtest 生成的权重，快速扫 4 档单边成本。
+
+    只重跑 bt 记账（不重建权重），因此很快；DSR 仅对 4 个高度相关的成本
+    变体计算，报告里注明「仅作参考不作结论」。
+    """
     weights = pd.read_parquet(ROOT / "reports/weights.parquet")
     close, opn, _ = load_prices()
     close = close.reindex(index=weights.index, columns=weights.columns)
     opn = opn.reindex(index=weights.index, columns=weights.columns)
-    eff = weights.shift(1).fillna(0.0)
+    eff = weights.shift(1).fillna(0.0)  # T 日信号，T+1 生效（与基准回测一致）
     rows = []
     sharpes = []
-    for cost in [0, 8, 16, 24]:
+    for cost in [0, 8, 16, 24]:  # 单边成本 0/8/16/24bp
         r = run.run(eff, opn, close, cost_bps=cost, cash_rate=0.018)
         s = metrics.from_stats(r.stats)
         sharpes.append(s["sharpe"])

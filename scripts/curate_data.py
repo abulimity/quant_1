@@ -9,6 +9,7 @@ from etf_rotation.data.paths import ADJ, BARS, SYMBOLS, WAREHOUSE
 
 
 def _read(path):
+    """用 duckdb 读单个 bronze parquet（比 pandas 更快、省内存）。"""
     con = duckdb.connect()
     df = con.execute(f"SELECT * FROM read_parquet('{path.as_posix()}')").fetchdf()
     con.close()
@@ -16,15 +17,20 @@ def _read(path):
 
 
 def main(snapshot_id: str = "curated-1") -> None:
+    """把 bronze parquet 清洗/复权后写入 warehouse 的 bars_daily / close_adj / 日历 / 标的表。
+
+    snapshot_id 用于标记数据版本；同一 snapshot 重复写入会先删旧行再插入，保证可重复运行。
+    """
     bars = _read(BARS)
     adj = _read(ADJ)
     sym = _read(SYMBOLS)
 
-    issues = curate.validate_ohlcv(bars)
+    issues = curate.validate_ohlcv(bars)  # 先做数据质量检查，发现问题只告警不中断
     if any(issues.values()):
         print("WARNING data issues:", issues)
 
     sym_out = sym[["symbol_id", "ticker"]].copy()
+    # symbols 表最小字段：由 ticker 后缀推导交易所，统一使用 CN 日历与 CNY 计价
     sym_out = sym_out.assign(
         exchange=sym_out["ticker"].str.split(".").str[-1],
         calendar="CN",
@@ -36,7 +42,7 @@ def main(snapshot_id: str = "curated-1") -> None:
     m["adj_factor"] = m.groupby("symbol_id")["adj_factor"].ffill().fillna(1.0)
     last = m.groupby("symbol_id")["adj_factor"].transform("last")
     m["close_adj"] = m["close"] * m["adj_factor"] / last
-    m["amount"] = m["close"] * m["volume"] * 100
+    m["amount"] = m["close"] * m["volume"] * 100  # 成交额 = 收盘价 × 成交量 × 100（volume 单位：手）
 
     now = pd.Timestamp.now()
     bars_out = m[["symbol_id", "ts", "open", "high", "low", "close", "volume"]].copy()
@@ -56,7 +62,7 @@ def main(snapshot_id: str = "curated-1") -> None:
     con.register("bars_out", bars_out)
     con.register("close_out", close_out)
     con.register("cal", cal)
-    # 先写 symbols（bars/close_adj 有外键引用）
+    # 先写 symbols（bars/close_adj 有外键引用）；同 snapshot 先删旧行再插入，保证可重复运行
     con.execute(
         "INSERT OR REPLACE INTO symbols (symbol_id, ticker, exchange, calendar, currency) "
         "SELECT symbol_id, ticker, exchange, calendar, currency FROM sym_out"

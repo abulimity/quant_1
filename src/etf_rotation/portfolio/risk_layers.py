@@ -20,6 +20,9 @@ def vol_scale(realized_vol: float, target_vol: float) -> float:
 
 
 def overheat_mask(close, llt80, pct: float) -> bool:
-    """单标的过热：价格高于自身 80 日 LLT 达 pct（20%）→ 权重归零。"""
+    """单标的过热：价格高于自身 80 日 LLT 达 pct（20%）→ 权重归零。
+
+    注意：该规则目前尚未接入主流水线（见 TODO.md / 代码审阅手册 §8.4）。
+    """
     return close.iloc[-1] >= llt80.iloc[-1] * (1 + pct)
 

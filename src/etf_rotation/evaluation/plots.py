@@ -29,6 +29,7 @@ CAT_COLORS = {
 
 
 def _style(fig: go.Figure, height: int = 420) -> go.Figure:
+    """统一图表样式：中文字体、白底透明主题、统一 hover 与图例布局。"""
     fig.update_layout(
         font=dict(family=FONT, color="#2c3e50"),
         hovermode="x unified",
@@ -45,6 +46,7 @@ def _style(fig: go.Figure, height: int = 420) -> go.Figure:
 
 
 def nav_comparison(nav: pd.Series, benchmark: pd.Series, hs300: pd.Series) -> go.Figure:
+    """策略、等权全池基准、沪深300 三条净值曲线对比，均归一化到 1.0 起始。"""
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=nav.index, y=nav.values / nav.iloc[0], name="策略",
                              line=dict(color=BLUE, width=1.8)))
@@ -57,6 +59,7 @@ def nav_comparison(nav: pd.Series, benchmark: pd.Series, hs300: pd.Series) -> go
 
 
 def drawdown_curve(nav: pd.Series, benchmark: pd.Series | None = None) -> go.Figure:
+    """回撤曲线：净值 / 滚动峰值 − 1（百分比），可叠加基准回撤。"""
     fig = go.Figure()
     if benchmark is not None:
         bdd = (benchmark / benchmark.cummax() - 1) * 100
@@ -72,6 +75,7 @@ def drawdown_curve(nav: pd.Series, benchmark: pd.Series | None = None) -> go.Fig
 
 
 def rolling_perf(returns: pd.Series, windows=(63, 252)) -> go.Figure:
+    """滚动窗口年化收益与滚动夏普（默认 63/252 日），观察表现的时间稳定性。"""
     r = returns.dropna()
     fig = make_subplots(
         rows=2, cols=1, shared_xaxes=True, row_heights=[0.5, 0.5],
@@ -93,6 +97,7 @@ def rolling_perf(returns: pd.Series, windows=(63, 252)) -> go.Figure:
 
 
 def subperiod_performance(returns: pd.Series, regime: pd.Series) -> go.Figure:
+    """分年度累计收益 + 按牛/熊/震荡分组的累计收益。"""
     r = returns.dropna()
     g = regime.reindex(r.index).fillna("range")
     yr = r.groupby(r.index.year).apply(lambda s: (1 + s).prod() - 1)
@@ -121,6 +126,7 @@ def subperiod_performance(returns: pd.Series, regime: pd.Series) -> go.Figure:
 
 
 def monthly_heatmap(returns: pd.Series) -> go.Figure:
+    """年份 × 月份累计收益热力图，绿为正、红为负。"""
     r = returns.dropna()
     m = r.groupby([r.index.year, r.index.month]).apply(
         lambda s: (1 + s).prod() - 1
@@ -138,6 +144,7 @@ def monthly_heatmap(returns: pd.Series) -> go.Figure:
 
 
 def holdings_distribution(weights: pd.DataFrame, label_map: dict) -> go.Figure:
+    """持仓结构：上图按资产类别堆叠，下图按前 10 大持仓堆叠；现金按 1 − 总仓位补齐。"""
     w = weights.copy()
     order = ["风险资产", "纳指", "黄金", "防守", "现金"]
     by_cat = pd.DataFrame(index=w.index)
@@ -170,6 +177,7 @@ def holdings_distribution(weights: pd.DataFrame, label_map: dict) -> go.Figure:
 
 
 def return_distribution(returns: pd.Series) -> go.Figure:
+    """日收益直方图叠加同均值/方差的正态拟合，观察肥尾与偏度。"""
     r = returns.dropna()
     fig = go.Figure()
     fig.add_trace(go.Histogram(x=r.values, nbinsx=80, histnorm="probability density",
@@ -184,6 +192,7 @@ def return_distribution(returns: pd.Series) -> go.Figure:
 
 
 def cost_sensitivity(sens: pd.DataFrame) -> go.Figure:
+    """成本敏感性：单边成本变化时年化收益、最大回撤（取正）与 Calmar 的走势。"""
     x = sens["cost_bps"].astype(float)
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=x, y=sens["ann_return"] * 100, mode="lines+markers",

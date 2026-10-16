@@ -17,6 +17,7 @@ def config_hash(params: dict) -> str:
 
 
 def git_sha() -> str:
+    """当前提交短哈希，用于登记回测对应的代码版本；git 不可用时返回 'unknown'。"""
     try:
         return subprocess.check_output(
             ["git", "rev-parse", "--short", "HEAD"], text=True).strip()

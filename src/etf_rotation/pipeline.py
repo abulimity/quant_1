@@ -87,31 +87,39 @@ def load_indices() -> dict[str, pd.Series]:
 
 
 def load_fund_basic() -> pd.DataFrame:
+    """读取 ETF 基础信息表（名称/类型/上市日期），用于标的分类与 point-in-time 池。"""
     return _read_parquet(FETCHED / "fund_basic.parquet")
 
 
 def momentum_panel(logp: pd.DataFrame, window: int) -> pd.DataFrame:
-    """向量化的时间加权回归趋势分面板（列=ticker）。"""
-    x = np.arange(1, window + 1, dtype=float)
-    w = x / x.sum()
-    xw = (w * x).sum()
-    denom = (w * (x - xw) ** 2).sum()
+    """向量化的时间加权回归趋势分面板（列 = ticker，与 trend.momentum_score 同公式）。
+
+    对每个标的的对数价序列，用最近 window 期做时间加权最小二乘：
+    Slope 是回归斜率（年化 250 日后经 exp 映射为动量），R² 是拟合优度折扣因子；
+    最终 Momentum = (exp(250·Slope) − 1) · R²。此处用滑动窗口视图一次算完全列
+    （按 chunk 分批以控制内存），替代 trend.momentum_score 的逐标的循环。
+    """
+    x = np.arange(1, window + 1, dtype=float)  # 时间序号 1..window
+    w = x / x.sum()  # H1：线性时间权重，越近权重越大
+    xw = (w * x).sum()  # 时间序号的加权均值
+    denom = (w * (x - xw) ** 2).sum()  # 时间序号的加权方差（斜率的分母）
     arr = logp.to_numpy()
     n, m = arr.shape
-    out = np.full((n, m), np.nan)
-    chunk = 128
+    out = np.full((n, m), np.nan)  # 前 window-1 期没有回归结果，保持 NaN
+    chunk = 128  # 按列分批，避免一次性构造 (n, 全列, window) 的三维张量撑爆内存
     for c in range(0, m, chunk):
         sub = arr[:, c : c + chunk]
-        y = np.lib.stride_tricks.sliding_window_view(sub, window, axis=0)  # (n-w+1, k, w)
-        yw = np.tensordot(y, w, axes=([2], [0]))
-        slope = np.tensordot(y, w * (x - xw), axes=([2], [0])) / denom
-        yhat = slope[..., None] * x + (yw - slope * xw)[..., None]
-        ss_res = np.tensordot((y - yhat) ** 2, w, axes=([2], [0]))
-        ss_tot = np.tensordot((y - yw[..., None]) ** 2, w, axes=([2], [0]))
-        r2 = 1 - ss_res / np.where(ss_tot > 0, ss_tot, 1.0)
-        r2 = np.where(ss_tot > 0, r2, 0.0)
-        mom = (np.exp(250 * slope) - 1) * r2
-        out[window - 1 :, c : c + chunk] = mom
+        # 滑动窗口视图 shape (n-w+1, k, w)：每行是长度为 w 的滚动对数价窗口
+        y = np.lib.stride_tricks.sliding_window_view(sub, window, axis=0)
+        yw = np.tensordot(y, w, axes=([2], [0]))  # 加权均值（回归截距项）
+        slope = np.tensordot(y, w * (x - xw), axes=([2], [0])) / denom  # 加权最小二乘斜率
+        yhat = slope[..., None] * x + (yw - slope * xw)[..., None]  # 回归拟合线
+        ss_res = np.tensordot((y - yhat) ** 2, w, axes=([2], [0]))  # 加权残差平方和
+        ss_tot = np.tensordot((y - yw[..., None]) ** 2, w, axes=([2], [0]))  # 加权总平方和
+        r2 = 1 - ss_res / np.where(ss_tot > 0, ss_tot, 1.0)  # 拟合优度（除零保护）
+        r2 = np.where(ss_tot > 0, r2, 0.0)  # 总平方和为 0（无波动）时 R² 记为 0
+        mom = (np.exp(250 * slope) - 1) * r2  # 250 日年化斜率 → 动量，乘 R² 折扣
+        out[window - 1 :, c : c + chunk] = mom  # 窗口右端对齐，第 window 日才有值
     return pd.DataFrame(out, index=logp.index, columns=logp.columns)
 
 
@@ -195,6 +203,7 @@ def _daily_target(i: int, d, sig: dict, params: dict,
     risk_budget = base["risk"] * rscale
 
     target = {}
+    # 预热门限（既有设定）：回测起点后前 170 个交易日不建风险仓。
     if risk_budget > 0 and i >= 170:
         # point-in-time 可投资风险池：上市天数 + 20 日均成交额过滤
         elig = [
@@ -233,7 +242,7 @@ def _daily_target(i: int, d, sig: dict, params: dict,
                                   params["risk"]["vol_target_gold"])
         target[gold] = base["gold"] * v
 
-    # 防守仓：承接风险退出后剩余资金，每 120 日重选，等权分配
+    # 防守仓预热 60 个交易日后才启用；仅在风险仓未满配（有剩余资金）时承接，每 120 日重选
     allocated = sum(target.values())
     if allocated < 1.0 and i >= 60:
         if i - last_def_update >= params["defensive"]["rebalance_days"]:
@@ -252,7 +261,11 @@ def _daily_target(i: int, d, sig: dict, params: dict,
 
 
 def _combine_phases(phase_weights: list[pd.Series]) -> pd.Series:
-    """五相位目标平滑：5 个相位等权汇总。"""
+    """五相位目标平滑：5 个相位等权汇总。
+
+    每天只有 1 个相位重新计算，其余 4 个相位沿用旧值；等权平均后，
+    任一相位的变化只影响组合权重的 1/5，从而摊薄单日调仓冲击与换手。
+    """
     return pd.concat(phase_weights, axis=1).mean(axis=1)
 
 

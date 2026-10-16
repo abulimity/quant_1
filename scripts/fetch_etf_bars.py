@@ -21,6 +21,7 @@ DEFAULT_OUT = ROOT / "data/bronze/tushare/etf_rotation"
 
 
 def _retry(fn, tries=4, wait=1.5):
+    """指数退避重试：失败后等待 wait*2^i 秒重试，共 tries 次。"""
     for i in range(tries):
         try:
             return fn()
@@ -32,6 +33,7 @@ def _retry(fn, tries=4, wait=1.5):
 
 
 def _write_env(out: Path) -> None:
+    """把输出路径写回 .env，供 paths.py 的环境变量覆盖解析到新数据目录。"""
     envp = ROOT / ".env"
     lines = envp.read_text(encoding="utf-8").splitlines() if envp.exists() else []
     updates = {
@@ -45,6 +47,11 @@ def _write_env(out: Path) -> None:
 
 
 def main() -> None:
+    """一次性引导：拉取 ETF 基础信息 + 逐交易日拉日线与复权因子，落成 bronze parquet。
+
+    默认按交易日调用 tushare fund_daily/fund_adj，全量约数十分钟，勿频繁重跑；
+    可选 --no-env 跳过 .env 路径回写。
+    """
     ap = argparse.ArgumentParser()
     ap.add_argument("start", nargs="?", default="2015-01-01")
     ap.add_argument("end", nargs="?", default="2026-07-31")
@@ -65,6 +72,7 @@ def main() -> None:
         market="E", fields="ts_code,name,fund_type,invest_type,list_date,delist_date"))
     fb = fb.dropna(subset=["ts_code"]).drop_duplicates("ts_code")
     sym = pd.DataFrame({"symbol_id": range(len(fb)), "ticker": fb["ts_code"].values})
+    # 上交所代码以 .SH 结尾，其余按深交所处理
     sym["exchange"] = ["XSHG" if t.endswith(".SH") else "XSHE" for t in sym["ticker"]]
     sym["calendar"] = sym["exchange"]
     sym["currency"] = "CNY"
@@ -72,7 +80,7 @@ def main() -> None:
     sym["lot_size"] = 100
     sym["listed_on"] = pd.to_datetime(fb["list_date"], format="%Y%m%d", errors="coerce")
     sym["delisted_on"] = pd.NaT
-    tick2id = dict(zip(sym["ticker"], sym["symbol_id"]))
+    tick2id = dict(zip(sym["ticker"], sym["symbol_id"]))  # ticker → symbol_id，供日线/复权表回填
     sym.to_parquet(out / "symbols.parquet", index=False)
 
     cal = _retry(lambda: pro.trade_cal(
@@ -80,6 +88,7 @@ def main() -> None:
         end_date=args.end.replace("-", ""), is_open="1"))
     days = list(cal["cal_date"])
     bars_parts, adj_parts = [], []
+    # 逐交易日拉取（tushare 日频接口限速），每 50 日打印进度
     for i, d in enumerate(days):
         df = _retry(lambda: pro.fund_daily(trade_date=d))
         if df is not None and not df.empty:

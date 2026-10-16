@@ -12,6 +12,7 @@ def hrp_weights(returns: pd.DataFrame) -> pd.Series:
         return pd.Series(dtype=float)
     if returns.shape[1] == 1:
         return pd.Series(1.0, index=returns.columns)
+    # PyPortfolioOpt 默认用 Ledoit-Wolf 收缩估计协方差，样本短、标的多时更稳健。
     cov = risk_models.sample_cov(returns, returns_data=True)
     hrp = HRPOpt(returns=returns, cov_matrix=cov)
     return pd.Series(hrp.optimize(linkage_method="single"), index=returns.columns)

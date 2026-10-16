@@ -19,6 +19,11 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def main() -> None:
+    """单参数网格敏感性：一次只变一个维度（AGENTS.md 阶段目标 1）。
+
+    对每个网格点重建权重并跑 bt，输出稳健性分数、悬崖检测与 DSR
+    多重检验校正；结果写 reports/grid.json。
+    """
     ap = argparse.ArgumentParser()
     ap.add_argument("--grid", action="append", required=True)
     ap.add_argument("--start", default="2019-01-01")
@@ -28,7 +33,7 @@ def main() -> None:
     grid = {}
     for spec in args.grid:
         k, v = spec.split("=", 1)
-        grid[k] = [float(x) for x in v.split(",")]
+        grid[k] = [float(x) for x in v.split(",")]  # --grid 形如 a.b=0.7,0.8,0.9
 
     rows, sharpes = [], []
     for combo in itertools.product(*grid.values()):
@@ -40,7 +45,7 @@ def main() -> None:
         close, opn, _ = load_prices()
         close = close.reindex(index=weights.index, columns=weights.columns)
         opn = opn.reindex(index=weights.index, columns=weights.columns)
-        eff = weights.shift(1).fillna(0.0)
+        eff = weights.shift(1).fillna(0.0)  # T 日信号，T+1 生效
         r = run.run(eff, opn, close,
                     cost_bps=p["costs"]["one_side_bps"],
                     cash_rate=p["costs"]["cash_rate_annual"])

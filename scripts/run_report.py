@@ -19,6 +19,11 @@ M_END = "<!-- /VIS:AUTO -->"
 
 
 def main() -> None:
+    """汇总 run_backtest 的产物，生成自包含 HTML 可视化报告 + 交易明细，并回写回测报告。
+
+    依赖 reports/ 下已存在的 equity/metrics/sensitivity/weights/benchmark 与
+    transactions 文件，因此须先跑 run_backtest.py（及可选 run_sensitivity.py）。
+    """
     params = config.load_params()
     equity = pd.read_csv(REPORTS / "equity.csv", parse_dates=["ts"]).set_index("ts")
     nav = equity["nav"]
@@ -33,6 +38,7 @@ def main() -> None:
     cat = univ.classify(fb)
     nasdaq, gold = params["nasdaq_etf"], params["gold_etf"]
     label_map = {}
+    # 把每只标的归到四大类，供持仓分布图按资产类别堆叠
     for t in weights.columns:
         if t == nasdaq:
             label_map[t] = "纳指"
@@ -86,6 +92,7 @@ def main() -> None:
 
 
 def _build_md(metrics: dict, t: pd.DataFrame) -> str:
+    """生成回测报告中的自动可视化段落（含指标与交易摘要）。"""
     # 合计成本以引擎 fees 为准（run_backtest 落进 metrics.json）；
     # 兼容旧 metrics.json：缺 total_fees 时回退到逐笔估算合计。
     fees = metrics.get("total_fees", float(t["cost"].sum()))
@@ -108,6 +115,7 @@ def _build_md(metrics: dict, t: pd.DataFrame) -> str:
 
 
 def _write_report(section: str) -> None:
+    """用 <!-- VIS:AUTO --> 标记替换/追加自动生成段落，避免覆盖报告的手写部分。"""
     txt = REPORT.read_text(encoding="utf-8") if REPORT.exists() else ""
     if M_START in txt and M_END in txt:
         start = txt.index(M_START)

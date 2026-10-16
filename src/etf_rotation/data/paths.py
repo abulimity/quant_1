@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 
 def _p(name: str, default: Path) -> Path:
+    """解析数据路径：优先取环境变量覆盖值，未设置时退回仓库内默认路径。"""
     v = os.environ.get(name)
     return Path(v) if v else default
 
