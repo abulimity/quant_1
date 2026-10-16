@@ -88,15 +88,13 @@ def run(weights, open_price, close_price, cost_bps=8, cash_rate=0.018):
     nav = prices / prices.iloc[0]
     returns = nav.pct_change(fill_method=None).fillna(nav.iloc[0] - 1)
     with warnings.catch_warnings():
-        # bt 在访问 outlays 时会对多标的宽表逐列 insert，触发 pandas 的
-        # PerformanceWarning（性能提示，非正确性问题），这里只在该访问点屏蔽。
+        # bt 在访问 outlays / positions 时会对多标的宽表逐列 insert，触发 pandas
+        # 的 PerformanceWarning（性能提示，非正确性问题），这里只在该访问点屏蔽。
         warnings.simplefilter("ignore", pd.errors.PerformanceWarning)
         turnover = backtest.turnover
-    # trading_index 即真实交易日，用于去掉 bt 注入的 t0-1 bootstrap 行
-    trading_index = close_price.index
-    cash = backtest.strategy.cash.reindex(trading_index)
-    fees = backtest.strategy.fees.reindex(trading_index)
-    positions = backtest.positions.reindex(trading_index)
+        positions = backtest.positions.reindex(close_price.index)
+    cash = backtest.strategy.cash.reindex(close_price.index)
+    fees = backtest.strategy.fees.reindex(close_price.index)
     return BacktestResult(
         nav=nav,
         returns=returns,
