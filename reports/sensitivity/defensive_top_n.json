@@ -1,0 +1,41 @@
+{
+  "grid": {
+    "defensive.top_n": [
+      3,
+      5,
+      8
+    ]
+  },
+  "results": [
+    {
+      "defensive.top_n": 3,
+      "sharpe": 1.0393503131830195,
+      "max_drawdown": -0.12719746763896678,
+      "ann_return": 0.11826030244565033,
+      "calmar": 0.9297378685345891
+    },
+    {
+      "defensive.top_n": 5,
+      "sharpe": 1.0393503131830195,
+      "max_drawdown": -0.12719746763896678,
+      "ann_return": 0.11826030244565033,
+      "calmar": 0.9297378685345891
+    },
+    {
+      "defensive.top_n": 8,
+      "sharpe": 1.0393503131830195,
+      "max_drawdown": -0.12719746763896678,
+      "ann_return": 0.11826030244565033,
+      "calmar": 0.9297378685345891
+    }
+  ],
+  "n_trials": 3,
+  "robustness": 1.0,
+  "cliffs": {
+    "defensive.top_n": {
+      "cliff": false,
+      "max_jump": 0.0
+    }
+  },
+  "dsr": 0.5368864224104191
+}

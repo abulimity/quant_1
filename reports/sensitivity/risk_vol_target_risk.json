@@ -1,0 +1,49 @@
+{
+  "grid": {
+    "risk.vol_target_risk": [
+      0.22,
+      0.26,
+      0.3,
+      0.34
+    ]
+  },
+  "results": [
+    {
+      "risk.vol_target_risk": 0.22,
+      "sharpe": 1.0668797264654601,
+      "max_drawdown": -0.12719908891111287,
+      "ann_return": 0.1139236106079522,
+      "calmar": 0.8956322846585983
+    },
+    {
+      "risk.vol_target_risk": 0.26,
+      "sharpe": 1.0393503131830195,
+      "max_drawdown": -0.12719746763896678,
+      "ann_return": 0.11826030244565033,
+      "calmar": 0.9297378685345891
+    },
+    {
+      "risk.vol_target_risk": 0.3,
+      "sharpe": 1.0259129144551236,
+      "max_drawdown": -0.12355255370211615,
+      "ann_return": 0.12138092321637362,
+      "calmar": 0.9824234269493263
+    },
+    {
+      "risk.vol_target_risk": 0.34,
+      "sharpe": 1.0046495506273283,
+      "max_drawdown": -0.12301122700891498,
+      "ann_return": 0.1210310099283729,
+      "calmar": 0.9839021434978568
+    }
+  ],
+  "n_trials": 4,
+  "robustness": 1.0,
+  "cliffs": {
+    "risk.vol_target_risk": {
+      "cliff": true,
+      "max_jump": 0.02752941328244063
+    }
+  },
+  "dsr": 0.5451493265625871
+}

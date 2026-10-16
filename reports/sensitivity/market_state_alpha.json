@@ -1,0 +1,57 @@
+{
+  "grid": {
+    "market_state.alpha": [
+      0.05,
+      0.08,
+      0.1,
+      0.12,
+      0.15
+    ]
+  },
+  "results": [
+    {
+      "market_state.alpha": 0.05,
+      "sharpe": 1.0856149892343272,
+      "max_drawdown": -0.13620340054808466,
+      "ann_return": 0.12574401132804236,
+      "calmar": 0.9232075764778739
+    },
+    {
+      "market_state.alpha": 0.08,
+      "sharpe": 1.0659874944457222,
+      "max_drawdown": -0.12359536371919,
+      "ann_return": 0.12137621110953334,
+      "calmar": 0.9820450173624748
+    },
+    {
+      "market_state.alpha": 0.1,
+      "sharpe": 1.0393503131830195,
+      "max_drawdown": -0.12719746763896678,
+      "ann_return": 0.11826030244565033,
+      "calmar": 0.9297378685345891
+    },
+    {
+      "market_state.alpha": 0.12,
+      "sharpe": 1.0217180332281917,
+      "max_drawdown": -0.13132414480835186,
+      "ann_return": 0.11522021914498581,
+      "calmar": 0.8773726972532938
+    },
+    {
+      "market_state.alpha": 0.15,
+      "sharpe": 1.0369356886363452,
+      "max_drawdown": -0.13473630124277491,
+      "ann_return": 0.11634893506915578,
+      "calmar": 0.8635307188633016
+    }
+  ],
+  "n_trials": 5,
+  "robustness": 1.0,
+  "cliffs": {
+    "market_state.alpha": {
+      "cliff": true,
+      "max_jump": 0.026637181262702647
+    }
+  },
+  "dsr": 0.5528788193397493
+}
