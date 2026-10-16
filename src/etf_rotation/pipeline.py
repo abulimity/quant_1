@@ -207,7 +207,9 @@ def _apply_overheat(target, close_d, llt80_d, pct):
 
 def _daily_target(i: int, d, sig: dict, params: dict,
                   last_def_update: int, current_defn: list[str]) -> tuple:
-    """计算单日目标权重（T 日信号），返回 (target, last_def_update, current_defn)。"""
+    """计算单日目标权重（T 日信号），返回
+    (target, last_def_update, current_defn, risk_score, keep)。
+    risk_score 覆盖风险池全量 ticker（可投资且 m21>0 者填当日排名分，其余 NaN）。"""
     nasdaq = params["nasdaq_etf"]
     gold = params["gold_etf"]
     regime = sig["regime"]
@@ -236,6 +238,8 @@ def _daily_target(i: int, d, sig: dict, params: dict,
     risk_budget = base["risk"] * rscale
 
     target = {}
+    risk_score = pd.Series(np.nan, index=risk_tickers)
+    keep: list[str] = []
     # 预热门限（既有设定）：回测起点后前 170 个交易日不建风险仓。
     if risk_budget > 0 and i >= 170:
         # point-in-time 可投资风险池：上市天数 + 20 日均成交额过滤
@@ -256,6 +260,7 @@ def _daily_target(i: int, d, sig: dict, params: dict,
                                      sig["rev_active"].loc[d, mom.index])
             else:
                 score = mom
+            risk_score.loc[score.index] = score
             cands = list(score.sort_values(ascending=False).index[: 3 * params["dedupe"]["max_holdings"]])
             # 相关性去重（0.80）→ 持仓上限 10 → HRP 配权
             corr = ret[cands].loc[:d].tail(250).corr()
@@ -300,7 +305,7 @@ def _daily_target(i: int, d, sig: dict, params: dict,
             for t in current_defn:
                 target[t] = target.get(t, 0.0) + w
 
-    return target, last_def_update, current_defn
+    return target, last_def_update, current_defn, risk_score, keep
 
 
 def _combine_phases(phase_weights: list[pd.Series]) -> pd.Series:
@@ -331,6 +336,23 @@ def _apply_portfolio_vol_cap(candidate, port_rets, params):
     return candidate * scale, scale
 
 
+def _apply_hysteresis(candidate, prev_final, score, risk_tickers, improve):
+    """整组迟滞（H4）：新风险组合得分未较旧组合明显改善时维持旧组合。
+
+    score 为当日风险池横截面排名分；新得分 = 候选组合中风险标的 score 之和，
+    旧得分 = 当前持仓中风险标的 score 之和。新得分 ≤ 旧得分×(1+improve) 且
+    原风险持仓仍有效（都在当日 score 索引中）时维持旧组合，否则切换。
+    """
+    held_risk = [t for t in prev_final.index if prev_final[t] > 0 and t in risk_tickers]
+    if not held_risk or not all(pd.notna(score.get(t)) for t in held_risk):
+        return candidate
+    new_score = float(score.reindex(candidate[candidate > 0].index).dropna().sum())
+    old_score = float(score.reindex(held_risk).sum())
+    if new_score <= old_score * (1 + improve):
+        return prev_final
+    return candidate
+
+
 def build_weights(params: dict, start: str, end: str) -> pd.DataFrame:
     """计算策略目标权重面板（index=回测交易日、columns=标的、每行和 ≤ 1）。
 
@@ -356,12 +378,15 @@ def build_weights(params: dict, start: str, end: str) -> pd.DataFrame:
     current_defn: list[str] = []
     prev_final = pd.Series(0.0, index=cols)
     port_rets: list[float] = []
+    improve = params["execution"]["hysteresis_improve"]
 
     for i, d in enumerate(days):
-        target, last_def_update, current_defn = _daily_target(
+        target, last_def_update, current_defn, score, keep = _daily_target(
             i, d, sig, params, last_def_update, current_defn)
         phase_weights[i % 5] = pd.Series(target).reindex(cols).fillna(0.0)
         candidate = _combine_phases(phase_weights)
+        candidate = _apply_hysteresis(
+            candidate, prev_final, score, sig["risk_tickers"], improve)
         # port_rets 只 append「上一日最终权重 × 当日收益」，只用 ≤d 的信息（无前视）。
         if i > 0:
             prev_ret = float((prev_final * sig["ret"].loc[d, cols].fillna(0.0)).sum())

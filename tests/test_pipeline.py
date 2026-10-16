@@ -47,3 +47,19 @@ def test_range_score_no_active_falls_back_to_momentum_order():
     active = pd.Series({"A": False, "B": False})
     score = pipe._range_score(mom, zbias, active)
     assert score["A"] > score["B"]
+
+
+def test_hysteresis_holds_when_no_improvement():
+    candidate = pd.Series({"B": 1.0})
+    prev = pd.Series({"A": 1.0})
+    score = pd.Series({"A": 0.80, "B": 0.81})
+    out = pipe._apply_hysteresis(candidate, prev, score, ["A", "B"], 0.02)
+    pd.testing.assert_series_equal(out, prev)
+
+
+def test_hysteresis_switches_when_improves():
+    candidate = pd.Series({"B": 1.0})
+    prev = pd.Series({"A": 1.0})
+    score = pd.Series({"A": 0.80, "B": 0.90})
+    out = pipe._apply_hysteresis(candidate, prev, score, ["A", "B"], 0.02)
+    pd.testing.assert_series_equal(out, candidate)
