@@ -13,6 +13,8 @@ import warnings
 import bt
 import pandas as pd
 
+from etf_rotation.backtest.open_rebalance import OpenRebalance
+
 
 @dataclass
 class BacktestResult:
@@ -52,13 +54,16 @@ class _CashInterest(bt.algos.Algo):
         return True
 
 
-def run(weights, open_price, close_price, cost_bps=8, cash_rate=0.018):
+def run(weights, open_price, close_price, cost_bps=8, cash_rate=0.018,
+        execution="close", gap_delay_pct=0.01):
     """把目标权重面板喂给 bt 记账，返回净值与日收益序列。
 
-    open_price 为预留形参（bt 单价格模型用 close_price 成交，等价 T+1 收盘），
-    未接入 T+1 开盘 + 跳空顺延（见 TODO.md）。
+    execution="close" 沿用 bt 标准 `Rebalance`（单价格模型，成交/估值共用收盘价）；
+    execution="open" 换成自定义 `OpenRebalance`：按 T+1 开盘价成交、收盘价估值，
+    叠加买入高开顺延与停牌跳过。
     """
     close_price = close_price.ffill()  # 停牌日以前收价估值，避免 bt 对 NaN 持仓报错
+    open_price = open_price.reindex(index=close_price.index, columns=close_price.columns)
     w = weights.reindex(index=close_price.index, columns=close_price.columns).fillna(0.0)
     # 停牌/缺失价日的持仓按现金处理，避免向 NaN 价格分配资金
     w = w.mask(close_price.isna(), 0.0)
@@ -66,10 +71,26 @@ def run(weights, open_price, close_price, cost_bps=8, cash_rate=0.018):
     active = w.columns[(w > 0).any(axis=0)]
     w = w[active]
     close_price = close_price[active]
+    open_price = open_price[active]
+
+    if execution == "open":
+        rebalance_algo = OpenRebalance(gap_delay_pct)
+        additional = {
+            "target_weights": w,
+            "bidoffer": pd.DataFrame(0.0, index=close_price.index, columns=close_price.columns),
+            "open_price": open_price,
+            "close_price": close_price,
+        }
+    elif execution == "close":
+        rebalance_algo = bt.algos.Rebalance()
+        additional = {"target_weights": w}
+    else:
+        raise ValueError(f"unknown execution mode: {execution!r} (expected 'close' or 'open')")
+
     strat = bt.Strategy(
         "etf_rotation",
         [bt.algos.RunDaily(), _CashInterest(cash_rate),
-         bt.algos.WeighTarget("target_weights"), bt.algos.Rebalance()],
+         bt.algos.WeighTarget("target_weights"), rebalance_algo],
     )
     backtest = bt.Backtest(
         strat,
@@ -78,7 +99,7 @@ def run(weights, open_price, close_price, cost_bps=8, cash_rate=0.018):
         commissions=_flat_commission(cost_bps),
         integer_positions=False,
         progress_bar=False,
-        additional_data={"target_weights": w},
+        additional_data=additional,
     )
     result = bt.run(backtest)
     name = backtest.name
@@ -92,7 +113,9 @@ def run(weights, open_price, close_price, cost_bps=8, cash_rate=0.018):
         # 的 PerformanceWarning（性能提示，非正确性问题），这里只在该访问点屏蔽。
         warnings.simplefilter("ignore", pd.errors.PerformanceWarning)
         turnover = backtest.turnover
-        positions = backtest.positions.reindex(close_price.index)
+        # positions 采用各标的占总组合的权重（0~1），与目标权重同口径，便于检查
+        # 延迟/停牌是否按目标权重成交（引擎 share 数量口径对使用者不直观）。
+        positions = backtest.security_weights.reindex(close_price.index)
     cash = backtest.strategy.cash.reindex(close_price.index)
     fees = backtest.strategy.fees.reindex(close_price.index)
     return BacktestResult(
