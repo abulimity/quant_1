@@ -37,12 +37,14 @@
 - [ ] 3.6 持仓可视化现金口径改引擎 `backtest.strategy.cash / nav`，替换 `plots.holdings_distribution` 的 `1 - w.sum(axis=1)`。
 - [ ] 3.7 run 登记把执行口径纳入哈希：`registry.config_hash` 当前只哈希 params，close/open 两种 `--execution` 共用同一 run_id 互相覆盖（`INSERT OR REPLACE`），需把执行口径（含 `gap_delay_pct`）纳入 run_id，避免登记记录被覆盖。
 - [ ] 3.8 清理陈旧/遗留代码：`risk_layers.overheat_mask` 的 docstring 仍写「尚未接入主流水线」（实际已由 `pipeline._apply_overheat` 接入）；`execution/hysteresis.py` 与 `execution/gap_delay.py` 及其老测试 `test_hysteresis.py`/`test_gap_delay.py` 为遗留重复实现，二选一或删除。
+- [ ] 3.9 参数接线收尾：`params.yaml` 已声明但仍硬编码的参数接入主线或显式标注——`market_state.slope_up/slope_down`（1.005/0.995）、`trend.ann_factor`（250）、`multi_asset.risk/nasdaq/gold`（0.50/0.375/0.125）、`execution.phases/phase_interval`（5/5）、`scripts/run_sensitivity.py` 的 `cash_rate=0.018`（见 `docs/superpowers/plans/2026-10-16-etf-rotation-tuning.md` 审核记录）。
 
 ## 阶段四：文档与仓库维护
 
 - [ ] 4.1 README 过期指标同步：基准 13.64%/33 测试 → 12.48%/46 测试（CHANGELOG v1.0.1 已更新，README 未同步）。
 - [ ] 4.2 AGENTS.md 分支名 `master` 与实际 `main` 不一致，统一。
 - [ ] 4.3 `docs/deepseek_hand_book.md` 与 `docs/用 bt 框架复现多资产 ETF 轮动策略：分步实现路线.md` 内容完全重复（MD5 相同），二选一或归档其一。
+- [ ] 4.4 版本号同步：`src/etf_rotation/__init__.py` 的 `__version__` 仍是 `1.0.0`，而 README/CHANGELOG 已写 v1.0.1，统一版本号（或补发版本 tag）。
 
 ## 已完成（归档）
 
