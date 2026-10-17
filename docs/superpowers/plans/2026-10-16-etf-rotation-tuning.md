@@ -642,3 +642,53 @@ git commit -m "docs: record tuning results, OOS re-validation and final params"
 ## 执行顺序与依赖
 
 Task 1 → 2 → 3 → 4 是顺序依赖（后两者复用前两者的缓存与参数解析）；Task 5 依赖 Task 4；Task 6 依赖 Task 5。Task 1/2 为行为不变重构，完成后先确认 `weights.parquet` 与 `metrics.json` 与基线逐值一致，再进入改变结果的阶段。
+
+---
+
+## 执行结果记录（2026-10-16 至 2026-10-17）
+
+**结论：计划全部执行完毕。** 全量单测 67 通过，工作树干净；`main` 上新增 7 个提交，尚未推送远端。
+
+### 执行与验证
+
+- Task 1 参数接线后，`weights.parquet` 与 `metrics.json` 与基线逐值一致（`IDENTICAL`）。
+- Task 2 信号/上下文缓存后，`weights.parquet` 与基线逐值一致（`IDENTICAL`）。
+- Task 3/4 冒烟通过：`reports/sensitivity/dedupe_corr_threshold.json`、`reports/sensitivity_summary.json`、`reports/heatmap_dedupe.corr_threshold_x_costs.one_side_bps.html` 均生成。
+- Task 5 八个维度单参数网格全部跑完，`robustness` 均为 1.0，DSR 落在 0.54–0.55（低于 0.95，调参结论只作候选不作统计显著结论）。
+- Task 6 组合调试、样本外 re-验证、成本敏感性、报告与 README 同步全部完成。
+
+### 关键结果（close 口径，2019-01 ~ 2026-07，单边 8bp）
+
+| 口径 | 年化 | 最大回撤 | Sharpe | Calmar | 换手 | total_fees |
+|---|---|---|---|---|---|---|
+| 机制补全后默认参数 | 11.83% | -12.72% | 1.039 | 0.930 | 5.42% | 0.2313 |
+| 最终候选 | 12.31% | -12.21% | 1.073 | 1.008 | 5.37% | 0.2306 |
+
+最终候选参数：`market_state.bull_threshold=0.30`、`dedupe.corr_threshold=0.85`，其余维持默认。
+
+样本外子区间：2019–2023 为 7.18% / -12.21% / 0.710 / 0.589；2024–2026 为 24.92% / -7.19% / 1.832 / 3.464。两个子区间均为正收益，最终候选未出现「只在单边子区间占优」，但前半段仍显著偏弱，策略的市场状态依赖依然存在。
+
+成本敏感性（最终候选）：0bp 14.69% / -11.26% / 1.256 / 1.304；8bp 12.31% / -12.21% / 1.073 / 1.008；16bp 9.97% / -15.04% / 0.889 / 0.663；24bp 7.69% / -17.82% / 0.706 / 0.431。策略仍高度依赖低换手假设。
+
+### 执行中的偏离与修复（均已单测验证并提交）
+
+1. `test_defensive_select_respects_top_n` 计划用例与「同一大类最多 1 只」语义冲突，改为 bond/money 两类下 `top_n=2` 返回 2、`top_n=1` 返回 1。
+2. `test_pivot_heatmap` 计划用例索引顺序与 `pivot_heatmap` 实现（index=y, columns=x）相反，修正为 `h.loc[0, 0.75]`、`h.loc[8, 0.85]`。
+3. `parse_grid_spec` 标量分支强制转 float，导致 `dedupe.max_holdings=6,8,10,12` 的 `3*6.0` 成为 float 切片下标而崩溃；改为逐值 `yaml.safe_load` 保留 int。
+4. `signal_cache_key` 遗漏 `market_state.bull_threshold` / `market_state.bear_threshold` / `reversal.*`，导致 bull_threshold 网格全部复用首个 regime；补全键集并重跑该维度。
+5. Task 5 Step 5 的 18 点更细成本热力图未跑：已有 `run_sensitivity.py` 的 0/8/16/24bp 与 Task 4 的 3×3 corr×cost 热力图覆盖，按「如需更细」跳过。
+
+### 提交记录
+
+- `322442d` refactor: wire trend/market-state/risk/defensive/hrp params into pipeline
+- `62caddf` perf: cache signal precompute and price context across grid points
+- `4a5fa51` feat: support list-valued grid params and per-dimension sensitivity output
+- `c1bc600` feat: add two-parameter sensitivity heatmap
+- `3526a65` fix: preserve integer grid values in parse_grid_spec
+- `8d96713` fix: include all signal-affecting params in signal cache key
+- `f5d714a` docs: record tuning results, OOS re-validation and final params
+
+### 遗留待用户决定
+
+- 是否把最终候选参数写回 `config/params.yaml` 作为新默认（本次未改默认参数文件）。
+- 是否将 `main` 推送至 `origin/main`，或另建评审分支开 PR（本次仅本地提交）。
