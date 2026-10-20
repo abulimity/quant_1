@@ -152,28 +152,7 @@ def momentum_panel(logp: pd.DataFrame, window: int, weighting: str = "linear") -
     最终 Momentum = (exp(250·Slope) − 1) · R²。此处用滑动窗口视图一次算完全列
     （按 chunk 分批以控制内存），替代 trend.momentum_score 的逐标的循环。
     """
-    x = np.arange(1, window + 1, dtype=float)  # 时间序号 1..window
-    w = trend._time_weights(window, weighting)  # H1：时间权重（linear/exp）
-    xw = (w * x).sum()  # 时间序号的加权均值
-    denom = (w * (x - xw) ** 2).sum()  # 时间序号的加权方差（斜率的分母）
-    arr = logp.to_numpy()
-    n, m = arr.shape
-    out = np.full((n, m), np.nan)  # 前 window-1 期没有回归结果，保持 NaN
-    chunk = 128  # 按列分批，避免一次性构造 (n, 全列, window) 的三维张量撑爆内存
-    for c in range(0, m, chunk):
-        sub = arr[:, c : c + chunk]
-        # 滑动窗口视图 shape (n-w+1, k, w)：每行是长度为 w 的滚动对数价窗口
-        y = np.lib.stride_tricks.sliding_window_view(sub, window, axis=0)
-        yw = np.tensordot(y, w, axes=([2], [0]))  # 加权均值（回归截距项）
-        slope = np.tensordot(y, w * (x - xw), axes=([2], [0])) / denom  # 加权最小二乘斜率
-        yhat = slope[..., None] * x + (yw - slope * xw)[..., None]  # 回归拟合线
-        ss_res = np.tensordot((y - yhat) ** 2, w, axes=([2], [0]))  # 加权残差平方和
-        ss_tot = np.tensordot((y - yw[..., None]) ** 2, w, axes=([2], [0]))  # 加权总平方和
-        r2 = 1 - ss_res / np.where(ss_tot > 0, ss_tot, 1.0)  # 拟合优度（除零保护）
-        r2 = np.where(ss_tot > 0, r2, 0.0)  # 总平方和为 0（无波动）时 R² 记为 0
-        mom = (np.exp(250 * slope) - 1) * r2  # 250 日年化斜率 → 动量，乘 R² 折扣
-        out[window - 1 :, c : c + chunk] = mom  # 窗口右端对齐，第 window 日才有值
-    return pd.DataFrame(out, index=logp.index, columns=logp.columns)
+    return trend.momentum_panel(logp, window, weighting=weighting)
 
 
 def _precompute_signals(close, opn, amt, indices, params, cat) -> dict:

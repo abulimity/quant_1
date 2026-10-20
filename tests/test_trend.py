@@ -32,3 +32,15 @@ def test_momentum_score_weighting_exp_differs():
     c = trend.momentum_score(close, 21, weighting="exp")
     assert not np.allclose(a.dropna(), c.dropna(), rtol=1e-6)
 
+
+def test_momentum_panel_matches_score_single_column():
+    idx = pd.date_range("2023-01-01", periods=120, freq="B")
+    rng = np.random.default_rng(0)
+    close = pd.Series(np.cumprod(1 + rng.normal(0, 0.008, len(idx))), index=idx)
+    w = 21
+    via_score = trend.momentum_score(close, w)
+    via_panel = trend.momentum_panel(np.log(close).to_frame(), w).iloc[:, 0]
+    mask = via_score.notna()
+    np.testing.assert_allclose(via_score[mask].values, via_panel[mask].values,
+                               rtol=1e-9, atol=1e-12)
+

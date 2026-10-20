@@ -21,27 +21,38 @@ def _time_weights(window: int, weighting: str = "linear") -> np.ndarray:
     return w / w.sum()
 
 
-def momentum_score(close: pd.Series, window: int, ann: int = 250,
-                   weighting: str = "linear") -> pd.Series:
-    """Momentum(w) = [exp(ann·Slope(w)) − 1] · R²(w)。
+def momentum_panel(logp: pd.DataFrame, window: int, ann: int = 250,
+                   weighting: str = "linear") -> pd.DataFrame:
+    """向量化的时间加权回归趋势分面板（列 = ticker，与 momentum_score 同公式）。
 
-    对复权价对数序列做时间加权（H1，权重见 `_time_weights`）最小二乘，
-    Slope 为回归斜率（ann 日年化），R² 为趋势质量折扣因子。单序列循环实现，
-    供纳指/黄金等少量标的；大批量横截面用 pipeline.momentum_panel 的向量化版本。
+    对每个标的的对数价序列，用最近 window 期做时间加权最小二乘：Slope 是回归斜率
+    （ann 日年化后经 exp 映射为动量），R² 是拟合优度折扣因子；最终
+    Momentum = (exp(ann·Slope) − 1) · R²。滑动窗口视图一次算完全列，按 chunk 分批控制内存。
     """
-    logp = np.log(close)
     x = np.arange(1, window + 1, dtype=float)
     w = _time_weights(window, weighting)
     xw = (w * x).sum()
     denom = (w * (x - xw) ** 2).sum()
-    out = pd.Series(index=close.index, dtype=float)
-    for i in range(window, len(close) + 1):
-        y = logp.iloc[i - window : i].to_numpy()
-        yw = (w * y).sum()
-        slope = (w * (x - xw) * (y - yw)).sum() / denom
-        yhat = slope * x + (yw - slope * xw)
-        ss_res = (w * (y - yhat) ** 2).sum()
-        ss_tot = (w * (y - yw) ** 2).sum()
-        r2 = 1 - ss_res / ss_tot if ss_tot > 0 else 0.0
-        out.iloc[i - 1] = (np.exp(ann * slope) - 1) * r2
-    return out
+    arr = logp.to_numpy()
+    n, m = arr.shape
+    out = np.full((n, m), np.nan)
+    chunk = 128
+    for c in range(0, m, chunk):
+        sub = arr[:, c : c + chunk]
+        y = np.lib.stride_tricks.sliding_window_view(sub, window, axis=0)
+        yw = np.tensordot(y, w, axes=([2], [0]))
+        slope = np.tensordot(y, w * (x - xw), axes=([2], [0])) / denom
+        yhat = slope[..., None] * x + (yw - slope * xw)[..., None]
+        ss_res = np.tensordot((y - yhat) ** 2, w, axes=([2], [0]))
+        ss_tot = np.tensordot((y - yw[..., None]) ** 2, w, axes=([2], [0]))
+        r2 = 1 - ss_res / np.where(ss_tot > 0, ss_tot, 1.0)
+        r2 = np.where(ss_tot > 0, r2, 0.0)
+        mom = (np.exp(ann * slope) - 1) * r2
+        out[window - 1 :, c : c + chunk] = mom
+    return pd.DataFrame(out, index=logp.index, columns=logp.columns)
+
+
+def momentum_score(close: pd.Series, window: int, ann: int = 250,
+                   weighting: str = "linear") -> pd.Series:
+    """Momentum(w) = [exp(ann·Slope(w)) − 1] · R²(w)，单序列薄封装（momentum_panel 单列）。"""
+    return momentum_panel(np.log(close).to_frame(), window, ann, weighting).iloc[:, 0]
