@@ -1,0 +1,9 @@
+defaults:
+  - _self_
+
+# 单参数网格：param_key 为 params.yaml 的点分路径，param_value 由 -m 多值扫描
+param_key: "dedupe.corr_threshold"
+param_value: 0.80
+start: "2019-01-01"
+end: "2026-07-31"
+execution: close

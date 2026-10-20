@@ -52,3 +52,14 @@ def test_load_params_validates_defaults():
     p = config.load_params()
     assert p["dedupe"]["corr_threshold"] == 0.80
     assert p["market_state"]["bull_threshold"] == 0.35
+
+
+def test_hydra_grid_config_loads():
+    from hydra import compose, initialize
+    from hydra.core.global_hydra import GlobalHydra
+
+    GlobalHydra.instance().clear()
+    with initialize(version_base=None, config_path="../config/hydra"):
+        cfg = compose(config_name="grid")
+    assert cfg["param_key"] == "dedupe.corr_threshold"
+    assert cfg["execution"] == "close"
