@@ -24,6 +24,8 @@ reports/*.parquet
 reports/*.baseline.*
 reports/runs/
 reports/grid.json
+reports/attribution.json
+reports/signals/
 
 # OS
 .DS_Store
