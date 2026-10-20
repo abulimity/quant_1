@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from etf_rotation.execution import shift_weights
 from etf_rotation import config
 from etf_rotation.backtest import run
 from etf_rotation.evaluation import metrics, overfitting, sensitivity
@@ -43,7 +44,7 @@ def main() -> None:
         weights = build_weights(p, args.start, args.end, context=ctx)
         close = close_all.reindex(index=weights.index, columns=weights.columns)
         opn = opn_all.reindex(index=weights.index, columns=weights.columns)
-        eff = weights.shift(1).fillna(0.0)  # T 日信号，T+1 生效
+        eff = shift_weights.shift_weights(weights)  # T 日信号，T+1 生效
         r = run.run(eff, opn, close,
                     cost_bps=p["costs"]["one_side_bps"],
                     cash_rate=p["costs"]["cash_rate_annual"])

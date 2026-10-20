@@ -9,6 +9,7 @@ from pathlib import Path
 import pandas as pd
 import plotly.express as px
 
+from etf_rotation.execution import shift_weights
 from etf_rotation import config
 from etf_rotation.backtest import run
 from etf_rotation.evaluation import metrics, sensitivity
@@ -37,7 +38,7 @@ def main() -> None:
         weights = build_weights(p, args.start, args.end, context=ctx)
         close = ctx["close"].reindex(index=weights.index, columns=weights.columns)
         opn = ctx["opn"].reindex(index=weights.index, columns=weights.columns)
-        eff = weights.shift(1).fillna(0.0)
+        eff = shift_weights.shift_weights(weights)
         r = run.run(eff, opn, close, cost_bps=p["costs"]["one_side_bps"],
                     cash_rate=p["costs"]["cash_rate_annual"])
         s = metrics.from_stats(r.stats)

@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from etf_rotation.execution import shift_weights
 from etf_rotation import config
 from etf_rotation.backtest import run
 from etf_rotation.data import snapshot
@@ -28,7 +29,7 @@ def _run_one(p, start, end, execution, ctx):
     weights = build_weights(p, start, end, context=ctx)
     close = ctx["close"].reindex(index=weights.index, columns=weights.columns)
     opn = ctx["opn"].reindex(index=weights.index, columns=weights.columns)
-    eff = weights.shift(1).fillna(0.0)
+    eff = shift_weights.shift_weights(weights)
     r = run.run(eff, opn, close, cost_bps=p["costs"]["one_side_bps"],
                 cash_rate=p["costs"]["cash_rate_annual"], execution=execution)
     s = metrics.from_stats(r.stats)

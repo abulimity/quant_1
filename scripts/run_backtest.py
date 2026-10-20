@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from etf_rotation.execution import shift_weights
 from etf_rotation import __version__, config
 from etf_rotation.backtest import run
 from etf_rotation.data import snapshot
@@ -44,7 +45,7 @@ def main() -> None:
     # 把价格面板对齐到权重面板的交易日与标的列，避免回测时列/索引错位
     close = close.reindex(index=weights.index, columns=weights.columns)
     opn = opn.reindex(index=weights.index, columns=weights.columns)
-    eff = weights.shift(1).fillna(0.0)  # T 日信号，T+1 生效
+    eff = shift_weights.shift_weights(weights)  # T 日信号，T+1 生效
     res = run.run(eff, opn, close,
                   cost_bps=p["costs"]["one_side_bps"],
                   cash_rate=p["costs"]["cash_rate_annual"],

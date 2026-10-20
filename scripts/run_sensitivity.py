@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from etf_rotation.execution import shift_weights
 from etf_rotation.backtest import run
 from etf_rotation.evaluation import metrics, overfitting
 from etf_rotation.pipeline import load_prices
@@ -23,7 +24,7 @@ def main() -> None:
     close, opn, _ = load_prices()
     close = close.reindex(index=weights.index, columns=weights.columns)
     opn = opn.reindex(index=weights.index, columns=weights.columns)
-    eff = weights.shift(1).fillna(0.0)  # T 日信号，T+1 生效（与基准回测一致）
+    eff = shift_weights.shift_weights(weights)  # T 日信号，T+1 生效（与基准回测一致）
     rows = []
     sharpes = []
     for cost in [0, 8, 16, 24]:  # 单边成本 0/8/16/24bp
