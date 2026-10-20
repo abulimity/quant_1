@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.1.0 (2026-10-20)
+
+- 工程化基础设施：run 身份哈希含「参数+代码+数据+执行+信号版本」（ml4t-registry-system）、append-only 登记、参数 schema 校验、H1–H10 参数化 + 假设账本（docs/assumptions.md）、Hydra multirun 网格、bronze 数据快照哈希。
+- 默认执行口径切到 T+1 开盘成交（OpenRebalance）；候选参数（bull 0.30 / corr 0.85）写回默认。
+- 修复 open 执行下前导纯现金日导致净值全 NaN 的 bug。
+- 测试：83 passed。默认基线 open 口径 9.61% / -15.79% / 0.88 / 0.61。
+
 ## v1.0.1 (2026-10-16)
 
 - bt 官方用法收敛：单次 `bt.run`、`WeighTarget` 按名传数（`additional_data`）、净值/收益改用 `Result.prices`。
