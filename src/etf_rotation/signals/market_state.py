@@ -26,20 +26,23 @@ def llt(close: pd.Series, alpha: float) -> pd.Series:
     return y
 
 
-def composite_score(indexes: dict, alpha: float = 0.10, win: int = 8) -> pd.Series:
+def composite_score(indexes: dict, alpha: float = 0.10, win: int = 8,
+                    slope_up: float = 1.005, slope_down: float = 0.995) -> pd.Series:
     """三指数各算 8 日 LLT 斜率状态（+1/0/−1）后等权平均，得 [-1,1] 复合分。"""
-    states = pd.DataFrame({k: _slope_state(v, alpha, win) for k, v in indexes.items()})
+    states = pd.DataFrame({k: _slope_state(v, alpha, win, slope_up, slope_down)
+                           for k, v in indexes.items()})
     return states.mean(axis=1)
 
 
-def _slope_state(close: pd.Series, alpha: float, win: int) -> pd.Series:
-    """单指数状态：8 日 LLT 斜率 >1.005 记 +1，<0.995 记 −1，其余 0。"""
+def _slope_state(close: pd.Series, alpha: float, win: int,
+                 slope_up: float, slope_down: float) -> pd.Series:
+    """单指数状态：8 日 LLT 斜率 > slope_up 记 +1，< slope_down 记 −1，其余 0。"""
     l = llt(close, alpha)
-    # 8 日斜率 = LLT / LLT.shift(8)：>1.005 即 8 日累计涨幅 >0.5%（上升趋势），
-    # <0.995 即累计跌幅 >0.5%（下降趋势），中间视为无方向。
+    # 8 日斜率 = LLT / LLT.shift(8)：>slope_up 即 8 日累计涨幅超阈值（上升趋势），
+    # <slope_down 即累计跌幅超阈值（下降趋势），中间视为无方向。
     slope = l / l.shift(win)
     out = pd.Series(0.0, index=close.index)
-    out.loc[slope > 1.005] = 1.0
-    out.loc[slope < 0.995] = -1.0
+    out.loc[slope > slope_up] = 1.0
+    out.loc[slope < slope_down] = -1.0
     return out
 

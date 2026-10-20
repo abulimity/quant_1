@@ -14,6 +14,17 @@ def test_combine_phases_means_snapshots():
     pd.testing.assert_series_equal(out, pd.Series({"X": 0.8, "Y": 0.2}))
 
 
+def test_range_score_default_50_50():
+    mom = pd.Series([1.0, 2.0, 3.0])
+    zbias = pd.Series([-1.0, -0.5, 0.0])
+    active = pd.Series([True, True, False])
+    a = pipe._range_score(mom, zbias, active)
+    b = pipe._range_score(mom, zbias, active, momentum_weight=0.5)
+    pd.testing.assert_series_equal(a, b)
+    c = pipe._range_score(mom, zbias, active, momentum_weight=1.0)
+    pd.testing.assert_series_equal(c, pipe._zscore(mom))
+
+
 def test_portfolio_vol_cap_only_shrinks():
     params = config.load_params()
     cand = pd.Series({"A": 0.5, "B": 0.3})

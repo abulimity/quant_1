@@ -18,10 +18,13 @@ from etf_rotation.signals import trend
 
 _SIGNAL_KEYS = (
     "trend.windows",
+    "trend.weighting",
     "market_state.alpha",
     "market_state.slope_window",
     "market_state.bull_threshold",
     "market_state.bear_threshold",
+    "market_state.slope_up",
+    "market_state.slope_down",
     "risk.vol_window",
     "risk.llm80_alpha",
     "reversal.ema_span",
@@ -141,7 +144,7 @@ def load_fund_basic() -> pd.DataFrame:
     return _read_parquet(FETCHED / "fund_basic.parquet")
 
 
-def momentum_panel(logp: pd.DataFrame, window: int) -> pd.DataFrame:
+def momentum_panel(logp: pd.DataFrame, window: int, weighting: str = "linear") -> pd.DataFrame:
     """向量化的时间加权回归趋势分面板（列 = ticker，与 trend.momentum_score 同公式）。
 
     对每个标的的对数价序列，用最近 window 期做时间加权最小二乘：
@@ -150,7 +153,7 @@ def momentum_panel(logp: pd.DataFrame, window: int) -> pd.DataFrame:
     （按 chunk 分批以控制内存），替代 trend.momentum_score 的逐标的循环。
     """
     x = np.arange(1, window + 1, dtype=float)  # 时间序号 1..window
-    w = x / x.sum()  # H1：线性时间权重，越近权重越大
+    w = trend._time_weights(window, weighting)  # H1：时间权重（linear/exp）
     xw = (w * x).sum()  # 时间序号的加权均值
     denom = (w * (x - xw) ** 2).sum()  # 时间序号的加权方差（斜率的分母）
     arr = logp.to_numpy()
@@ -177,8 +180,9 @@ def _precompute_signals(close, opn, amt, indices, params, cat) -> dict:
     """全历史信号预计算（保证 2019 起点也有足够 warmup；无前视）。"""
     logp = np.log(close)
     w_short, w_long = params["trend"]["windows"]
-    m21 = momentum_panel(logp, w_short)
-    m60 = momentum_panel(logp, w_long)
+    weighting = params["trend"]["weighting"]
+    m21 = momentum_panel(logp, w_short, weighting)
+    m60 = momentum_panel(logp, w_long, weighting)
     ret = close.pct_change(fill_method=None)
     vw = params["risk"]["vol_window"]
     vol60 = ret.rolling(vw).std() * np.sqrt(252)
@@ -192,6 +196,8 @@ def _precompute_signals(close, opn, amt, indices, params, cat) -> dict:
          "zzhl": indices["000922.CSI"]},
         alpha=params["market_state"]["alpha"],
         win=params["market_state"]["slope_window"],
+        slope_up=params["market_state"]["slope_up"],
+        slope_down=params["market_state"]["slope_down"],
     )
     regime = comp.map(
         lambda v: "bull" if v >= params["market_state"]["bull_threshold"]
@@ -201,8 +207,8 @@ def _precompute_signals(close, opn, amt, indices, params, cat) -> dict:
     # 纳指/黄金：各自 60 日动量（转负即退）与 60 日 EWMA 波动
     nasdaq = params["nasdaq_etf"]
     gold = params["gold_etf"]
-    nas_mom = trend.momentum_score(close[nasdaq], 60)
-    gold_mom = trend.momentum_score(close[gold], 60)
+    nas_mom = trend.momentum_score(close[nasdaq], 60, weighting=weighting)
+    gold_mom = trend.momentum_score(close[gold], 60, weighting=weighting)
     nas_vol = close[nasdaq].pct_change(fill_method=None).ewm(span=vw).std() * np.sqrt(252)
     gold_vol = close[gold].pct_change(fill_method=None).ewm(span=vw).std() * np.sqrt(252)
 
@@ -242,10 +248,10 @@ def _zscore(s: pd.Series) -> pd.Series:
     return (s - s.mean()) / sd if sd > 0 else pd.Series(0.0, index=s.index)
 
 
-def _range_score(mom_rank, zbias, active):
-    """震荡市综合分：动量分与反转分各自横截面 z-score 后 50/50 相加（H5/H6）。"""
+def _range_score(mom_rank, zbias, active, momentum_weight: float = 0.5):
+    """震荡市综合分：动量分与反转分各自横截面 z-score 后按 H5 权重相加（默认 50/50）。"""
     rev = (-zbias).where(active, 0.0)
-    return _zscore(mom_rank) + _zscore(rev)
+    return momentum_weight * _zscore(mom_rank) + (1 - momentum_weight) * _zscore(rev)
 
 
 def _apply_overheat(target, close_d, llt80_d, pct):
@@ -280,7 +286,10 @@ def _daily_target(i: int, d, sig: dict, params: dict,
     # 日期对齐取当日信号（勿用 .iloc[i]，见 build_weights 顶部说明）
     nas_sig = float(nas_mom.loc[d]) if pd.notna(nas_mom.loc[d]) else 0.0
     gold_sig = float(gold_mom.loc[d]) if pd.notna(gold_mom.loc[d]) else 0.0
-    base = multi_asset.base_weights(regime.loc[d], nas_sig, gold_sig)
+    base = multi_asset.base_weights(
+        regime.loc[d], nas_sig, gold_sig,
+        nasdaq_exit_threshold=params["multi_asset"]["nasdaq_exit_threshold"],
+        gold_exit_threshold=params["multi_asset"]["gold_exit_threshold"])
     # 分层风控：市场状态 × A 股趋势 × 波动率控制，共同缩放风险预算
     rscale = risk_layers.risk_scale(
         regime.loc[d],
@@ -314,7 +323,8 @@ def _daily_target(i: int, d, sig: dict, params: dict,
             # 震荡市叠加反转分（H5/H6），其余市场状态沿用纯动量排名
             if regime.loc[d] == "range":
                 score = _range_score(mom, sig["zbias"].loc[d, mom.index],
-                                     sig["rev_active"].loc[d, mom.index])
+                                     sig["rev_active"].loc[d, mom.index],
+                                     momentum_weight=params["reversal"]["momentum_weight"])
             else:
                 score = mom
             risk_score.loc[score.index] = score

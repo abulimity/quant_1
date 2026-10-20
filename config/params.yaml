@@ -2,11 +2,13 @@ trend:
   windows: [21, 60]
   rank_weights: [0.7, 0.3]
   ann_factor: 250
+  weighting: linear            # H1：时间权重 linear|exp
 reversal:
   ema_span: 14
   z_window: 170
   zbias_threshold: -0.5
   repair_lookback: 3
+  momentum_weight: 0.5          # H5：震荡市动量/反转合成权重
 market_state:
   alpha: 0.10
   slope_window: 8
@@ -21,6 +23,8 @@ multi_asset:
   risk: 0.50
   nasdaq: 0.375
   gold: 0.125
+  nasdaq_exit_threshold: 0.0    # H7：纳指动量退出阈值
+  gold_exit_threshold: 0.0      # H7：黄金动量退出阈值
 risk:
   llm80_alpha: 0.0247          # H3：80 日等价平滑
   index_drop_20d: -0.03
