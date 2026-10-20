@@ -205,6 +205,79 @@ def cost_sensitivity(sens: pd.DataFrame) -> go.Figure:
     return _style(fig)
 
 
+def market_state_timeline(diary: pd.DataFrame, nav: pd.Series) -> go.Figure:
+    """市场状态复合分折线 + ±0.30 阈值虚线，副轴叠加策略净值。"""
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+    fig.add_trace(go.Scatter(x=diary.index, y=diary["comp_score"], name="市场状态复合分",
+                             line=dict(color=BLUE, width=1.6)), secondary_y=False)
+    fig.add_hline(y=0.30, line=dict(color=GREY, dash="dot"))
+    fig.add_hline(y=-0.30, line=dict(color=GREY, dash="dot"))
+    fig.add_trace(go.Scatter(x=nav.index, y=nav.values, name="策略净值",
+                             line=dict(color=ORANGE, width=1.2)), secondary_y=True)
+    fig.update_layout(title="市场状态与净值联动")
+    fig.update_yaxes(title_text="复合分", secondary_y=False)
+    fig.update_yaxes(title_text="净值", secondary_y=True)
+    return _style(fig, 440)
+
+
+def risk_budget_stack(diary: pd.DataFrame) -> go.Figure:
+    """风险（含防守）/纳指/黄金/现金逐日堆叠面积图。"""
+    risk = (diary["total_weight"] - diary["nasdaq_weight"] - diary["gold_weight"]).clip(lower=0.0)
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=diary.index, y=risk, name="风险（含防守）", stackgroup="a",
+                             line=dict(width=0.3), fillcolor=CAT_COLORS["风险资产"]))
+    fig.add_trace(go.Scatter(x=diary.index, y=diary["nasdaq_weight"], name="纳指", stackgroup="a",
+                             line=dict(width=0.3), fillcolor=CAT_COLORS["纳指"]))
+    fig.add_trace(go.Scatter(x=diary.index, y=diary["gold_weight"], name="黄金", stackgroup="a",
+                             line=dict(width=0.3), fillcolor=CAT_COLORS["黄金"]))
+    fig.add_trace(go.Scatter(x=diary.index, y=diary["cash_weight"], name="现金", stackgroup="a",
+                             line=dict(width=0.3), fillcolor=CAT_COLORS["现金"]))
+    fig.update_layout(title="风险预算堆叠")
+    fig.update_yaxes(tickformat=".0%")
+    return _style(fig, 440)
+
+
+def signal_trends(tk: pd.DataFrame, ticker: str) -> go.Figure:
+    """单标的 5 行子图：m21/m60、score、zbias、close vs llt80、weight。"""
+    sub = tk.xs(ticker, level="ticker")
+    fig = make_subplots(
+        rows=5, cols=1, shared_xaxes=True, vertical_spacing=0.03,
+        subplot_titles=("m21/m60", "score", "zbias", "close vs llt80", "weight"),
+    )
+    fig.add_trace(go.Scatter(x=sub.index, y=sub["m21"], name="m21",
+                             line=dict(color=BLUE, width=1.2)), row=1, col=1)
+    fig.add_trace(go.Scatter(x=sub.index, y=sub["m60"], name="m60",
+                             line=dict(color=GREEN, width=1.2)), row=1, col=1)
+    fig.add_trace(go.Scatter(x=sub.index, y=sub["score"], name="score",
+                             line=dict(color=ORANGE, width=1.2)), row=2, col=1)
+    fig.add_trace(go.Scatter(x=sub.index, y=sub["zbias"], name="zbias",
+                             line=dict(color=BLUE, width=1.2)), row=3, col=1)
+    fig.add_trace(go.Scatter(x=sub.index, y=sub["close"], name="close",
+                             line=dict(color=BLUE, width=1.2)), row=4, col=1)
+    fig.add_trace(go.Scatter(x=sub.index, y=sub["llt80"], name="llt80",
+                             line=dict(color=RED, width=1.2)), row=4, col=1)
+    fig.add_trace(go.Scatter(x=sub.index, y=sub["weight"], name="weight",
+                             line=dict(color=GREEN, width=1.2)), row=5, col=1)
+    fig.update_layout(title=f"信号趋势：{ticker}", height=760)
+    return _style(fig, 760)
+
+
+def trade_triggers(diary: pd.DataFrame, trades: pd.DataFrame) -> go.Figure:
+    """交易触发事件标记：换仓（hysteresis_held=False）、过热退出、波动上限缩放。"""
+    fig = go.Figure()
+    switch = diary[~diary["hysteresis_held"].astype(bool)]
+    overheat = diary[diary["n_overheat_exits"] > 0]
+    volcap = diary[diary["vol_cap_scale"] < 1.0]
+    fig.add_trace(go.Scatter(x=switch.index, y=[1.0] * len(switch), mode="markers",
+                             name="换仓", marker=dict(color=ORANGE, size=6)))
+    fig.add_trace(go.Scatter(x=overheat.index, y=[0.8] * len(overheat), mode="markers",
+                             name="过热退出", marker=dict(color=RED, size=6)))
+    fig.add_trace(go.Scatter(x=volcap.index, y=[0.6] * len(volcap), mode="markers",
+                             name="波动上限缩放", marker=dict(color=GREEN, size=6)))
+    fig.update_layout(title="交易触发事件", yaxis=dict(visible=False))
+    return _style(fig, 320)
+
+
 def write_report(
     sections: list[tuple[str, str, go.Figure]],
     stats: list[tuple[str, str]],
