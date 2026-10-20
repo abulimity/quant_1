@@ -6,7 +6,7 @@
 
 - 版本：v1.1.0（见 CHANGELOG.md）
 - 基准结果（默认 open 口径 + 候选参数）：2019-01 ~ 2026-07 年化 9.61% / 最大回撤 -15.79% / Calmar 0.61；close 口径候选 12.31% / -12.21% / Calmar 1.01（研报对标 20.74% / -10.13% / 2.05）
-- 测试：83 passed
+- 测试：87 passed（另有 3 个慢测需全量信号预计算，见 tests/test_pipeline.py 与 tests/test_observability.py）
 - 待办与已知限制见 TODO.md；复现差异见 reports/回测报告.md；调参记录见 reports/调参记录.md
 
 ## 环境
