@@ -60,6 +60,9 @@ def main() -> None:
         ("年化波动", f"{metrics['ann_vol']:.2%}"),
         ("日均换手", f"{metrics['turnover']:.2%}"),
     ]
+    tx = pd.read_csv(REPORTS / "transactions.csv", parse_dates=["Date"]).set_index(["Date", "Security"])
+    t = trades.build_trade_table_from_engine(tx, cost_bps=params["costs"]["one_side_bps"])
+
     sections = [
         ("净值曲线对比", "策略 vs 等权持有全池基准 vs 沪深300，均归一化到 1.0 起始。",
          plots.nav_comparison(nav, bench["benchmark"], bench["hs300"])),
@@ -78,11 +81,28 @@ def main() -> None:
         ("成本敏感性", "单边成本 0→24bp 时，年化收益、最大回撤与 Calmar 的衰减。",
          plots.cost_sensitivity(sens_df)),
     ]
+    # 信号/决策章节：观测层产物存在时追加，缺失则优雅降级
+    diary_path = REPORTS / "signals" / "decision_diary.parquet"
+    tk_path = REPORTS / "signals" / "ticker_signals.parquet"
+    if diary_path.exists() and tk_path.exists():
+        diary = pd.read_parquet(diary_path)
+        tk = pd.read_parquet(tk_path)
+        held = tk[tk["status"] == "held_risk"]
+        top = held.groupby("ticker")["weight"].mean().nlargest(3).index.tolist()
+        sections.append(("市场状态与风险预算", "市场状态复合分与 ±0.30 阈值、策略净值联动。",
+                         plots.market_state_timeline(diary, nav)))
+        sections.append(("风险预算堆叠", "风险（含防守）/纳指/黄金/现金逐日仓位。",
+                         plots.risk_budget_stack(diary)))
+        for ticker in top:
+            sections.append((f"信号趋势：{ticker}", f"{ticker} 的 m21/m60、score、zbias、close vs llt80 与权重变化。",
+                             plots.signal_trends(tk, ticker)))
+        sections.append(("交易触发事件", "换仓、过热退出、波动上限缩放事件标记（信号 T 日 → 成交 T+1）。",
+                         plots.trade_triggers(diary, t)))
+    else:
+        print("WARNING: reports/signals/*.parquet 缺失，跳过「信号与决策」章节")
     plots.write_report(sections, stats, REPORTS / "可视化报告.html",
                        subtitle=f"{start} ~ {end} · 多资产 ETF 轮动策略 · v{__version__}")
 
-    tx = pd.read_csv(REPORTS / "transactions.csv", parse_dates=["Date"]).set_index(["Date", "Security"])
-    t = trades.build_trade_table_from_engine(tx, cost_bps=params["costs"]["one_side_bps"])
     try:
         t.to_csv(REPORTS / "trades.csv", index=False, encoding="utf-8-sig")
     except PermissionError:
