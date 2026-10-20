@@ -7,16 +7,19 @@ from pathlib import Path
 import yaml
 from dotenv import load_dotenv
 
+from etf_rotation.config_schema import validate_params
+
 _ROOT = Path(__file__).resolve().parents[2]
 _DEFAULT = _ROOT / "config" / "params.yaml"
 load_dotenv(_ROOT / ".env")
 
 
 def load_params(path=None) -> dict:
-    """读取参数 yaml，默认 config/params.yaml。"""
+    """读取参数 yaml，默认 config/params.yaml，返回经 schema 校验的字典。"""
     p = Path(path) if path else _DEFAULT
     with open(p, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+        params = yaml.safe_load(f)
+    return validate_params(params)
 
 
 def load_token() -> str:
