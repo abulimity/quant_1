@@ -58,7 +58,7 @@ def main() -> None:
                      ensure_ascii=False, indent=2))
     out = ROOT / "reports"
     out.mkdir(exist_ok=True)
-    pd.DataFrame({"nav": res.nav, "returns": res.returns}).to_csv(out / "equity.csv")
+    pd.DataFrame({"nav": res.nav, "returns": res.returns, "cash": res.cash}).to_csv(out / "equity.csv")
     with warnings.catch_warnings():
         # bt 访问 get_transactions/get_weights 会触发 pandas 宽表 PerformanceWarning，仅性能提示，屏蔽
         warnings.simplefilter("ignore", pd.errors.PerformanceWarning)

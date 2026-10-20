@@ -42,6 +42,13 @@ def _flat_commission(cost_bps: float):
 
 
 class _CashInterest(bt.algos.Algo):
+    """闲置现金按年化 cash_rate 日复利计息。
+
+    决策（TODO 3.5）：维持「现金计息」而非「显式现金资产」（cash 列复利 + 权重补
+    1-Σw）。当前口径下现金不占权重、只计息，等价于无风险利率的净值加成；若改为
+    显式现金资产属改变数值，需回 Part 1 流程重新确立基线。留待后续评估。
+    """
+
     def __init__(self, cash_rate: float):
         super().__init__()
         self.daily = (1 + cash_rate) ** (1 / 252) - 1

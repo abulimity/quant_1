@@ -28,6 +28,7 @@ def main() -> None:
     equity = pd.read_csv(REPORTS / "equity.csv", parse_dates=["ts"]).set_index("ts")
     nav = equity["nav"]
     returns = equity["returns"]
+    cash_weight = equity["cash"] / equity["nav"] if "cash" in equity.columns else None
     metrics = json.loads((REPORTS / "metrics.json").read_text(encoding="utf-8"))
     sens = json.loads((REPORTS / "sensitivity.json").read_text(encoding="utf-8"))
     sens_df = pd.DataFrame(sens["cost_sensitivity"])
@@ -75,7 +76,7 @@ def main() -> None:
         ("月度收益热力图", "年份 × 月份收益矩阵，绿为正、红为负，识别季节性。",
          plots.monthly_heatmap(returns)),
         ("持仓分布", "上：按资产类别堆叠；下：前 10 大持仓堆叠，观察轮动与集中度。",
-         plots.holdings_distribution(weights, label_map)),
+         plots.holdings_distribution(weights, label_map, cash=cash_weight)),
         ("收益分布", "日收益直方图叠加正态拟合，观察肥尾与偏度。",
          plots.return_distribution(returns)),
         ("成本敏感性", "单边成本 0→24bp 时，年化收益、最大回撤与 Calmar 的衰减。",

@@ -143,22 +143,24 @@ def monthly_heatmap(returns: pd.Series) -> go.Figure:
     return _style(fig, 460)
 
 
-def holdings_distribution(weights: pd.DataFrame, label_map: dict) -> go.Figure:
-    """持仓结构：上图按资产类别堆叠，下图按前 10 大持仓堆叠；现金按 1 − 总仓位补齐。"""
+def holdings_distribution(weights: pd.DataFrame, label_map: dict,
+                          cash: pd.Series | None = None) -> go.Figure:
+    """持仓结构：上图按资产类别堆叠，下图按前 10 大持仓堆叠；现金用引擎 cash/nav（缺省回退 1−总仓位）。"""
     w = weights.copy()
+    cash_leg = cash.reindex(w.index) if cash is not None else 1.0 - w.sum(axis=1)
     order = ["风险资产", "纳指", "黄金", "防守", "现金"]
     by_cat = pd.DataFrame(index=w.index)
     for c in order[:-1]:
         cols = [t for t in w.columns if label_map.get(t, "风险资产") == c]
         by_cat[c] = w[cols].sum(axis=1) if cols else 0.0
-    by_cat["现金"] = 1.0 - w.sum(axis=1)
+    by_cat["现金"] = cash_leg
 
     meanw = w.mean().sort_values(ascending=False)
     top = list(meanw.head(10).index)
     top_df = w[top].copy()
     others = [t for t in w.columns if t not in top]
     top_df["其他"] = w[others].sum(axis=1)
-    top_df["现金"] = 1.0 - w.sum(axis=1)
+    top_df["现金"] = cash_leg
 
     fig = make_subplots(
         rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.06,
