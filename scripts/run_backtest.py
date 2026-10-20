@@ -21,13 +21,13 @@ def main() -> None:
     """构建目标权重 → 用 bt 记账回测 → 输出绩效并登记 run。
 
     目标权重代表 T 日收盘后确定的持仓，真正生效在 T+1，因此回测前整体
-    .shift(1)；执行价按 T+1 收盘近似（bt 单价格模型，见 backtest/run.py）。
+    .shift(1)；默认执行价按 T+1 开盘成交（OpenRebalance），--execution close 回退收盘。
     """
     parser = argparse.ArgumentParser()
     parser.add_argument("start", nargs="?", default="2019-01-01")
     parser.add_argument("end", nargs="?", default="2026-07-31")
     parser.add_argument("--param", action="append", default=[])  # 支持 --param a.b.c=value 覆盖参数
-    parser.add_argument("--execution", choices=["close", "open"], default="close",
+    parser.add_argument("--execution", choices=["close", "open"], default="open",
                         help="成交口径：close=收盘成交（bt 标准 Rebalance），open=T+1 开盘成交+跳空顺延")
     args = parser.parse_args()
 

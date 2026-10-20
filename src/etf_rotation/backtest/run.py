@@ -2,8 +2,8 @@
 
 输入为「目标权重面板」（index=交易日、columns=标的）。bt 负责现金、持仓、
 换手与净值记账；成本通过 bt 的比例佣金回调实现（单边 bps），闲置现金按年化
-cash_rate 计息。执行价用当日收盘价（bt 单一价格模型），等价于 T 日信号、
-T+1 收盘成交的日度近似。
+cash_rate 计息。默认执行价用 T+1 开盘价（OpenRebalance），等价于 T 日信号、
+T+1 开盘成交；execution="close" 可选回退到收盘成交。
 """
 from __future__ import annotations
 
@@ -55,12 +55,12 @@ class _CashInterest(bt.algos.Algo):
 
 
 def run(weights, open_price, close_price, cost_bps=8, cash_rate=0.018,
-        execution="close", gap_delay_pct=0.01):
+        execution="open", gap_delay_pct=0.01):
     """把目标权重面板喂给 bt 记账，返回净值与日收益序列。
 
-    execution="close" 沿用 bt 标准 `Rebalance`（单价格模型，成交/估值共用收盘价）；
-    execution="open" 换成自定义 `OpenRebalance`：按 T+1 开盘价成交、收盘价估值，
-    叠加买入高开顺延与停牌跳过。
+    默认 execution="open" 走自定义 `OpenRebalance`：按 T+1 开盘价成交、收盘价估值，
+    叠加买入高开顺延与停牌跳过；execution="close" 沿用 bt 标准 `Rebalance`
+    （单价格模型，成交/估值共用收盘价）。
     """
     close_price = close_price.ffill()  # 停牌日以前收价估值，避免 bt 对 NaN 持仓报错
     # 统一索引 dtype 为 datetime64[ns]：bt 预处理后的 universe 索引是 ns，而
@@ -110,6 +110,10 @@ def run(weights, open_price, close_price, cost_bps=8, cash_rate=0.018,
     # 官方净值曲线：Result.prices 即 ffn GroupStats 的价格指数（起点 PAR=100）。
     # 只丢弃 bt 在 t0-1 注入的 bootstrap 行，保持输出索引与真实交易日一致。
     prices = result.prices[name].reindex(close_price.index)
+    # bt 的 Result.prices 可能缺失前导「纯现金」交易日（尤其 open 执行的顺延/停牌
+    # 使首笔成交后移），此时 reindex 产生前导 NaN；用首有效值补齐再归一化，避免
+    # 前导 NaN 经 prices.iloc[0] 把整条净值带成 NaN。
+    prices = prices.ffill().bfill()
     nav = prices / prices.iloc[0]
     returns = nav.pct_change(fill_method=None).fillna(nav.iloc[0] - 1)
     with warnings.catch_warnings():

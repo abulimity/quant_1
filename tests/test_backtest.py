@@ -74,7 +74,10 @@ def test_weigh_target_binds_by_name():
     idx = pd.date_range("2024-01-01", periods=5)
     w = pd.DataFrame(1.0, index=idx, columns=["X"])
     close = pd.DataFrame({"X": [10.0, 11.0, 12.0, 13.0, 14.0]}, index=idx)
-    res = run.run(w.shift(1).fillna(0.0), close, close, cost_bps=0, cash_rate=0)
+    # 显式 close 口径：本测试锁定 WeighTarget 按名绑定的 close 成交净值（14/11），
+    # open 默认会因 10% 日涨触发跳空顺延、成交后移，净值不同。
+    res = run.run(w.shift(1).fillna(0.0), close, close, cost_bps=0, cash_rate=0,
+                  execution="close")
     assert abs(res.nav.iloc[-1] - 14.0 / 11.0) < 1e-9
 
 
@@ -91,4 +94,16 @@ def test_trade_cost_reconciles_with_engine_fees():
     res = run.run(eff, close, close, cost_bps=8, cash_rate=0.018)
     t = trades.build_trade_table_from_engine(res.result.get_transactions(), cost_bps=8)
     assert t["cost"].sum() == pytest.approx(res.fees.sum(), abs=1e-9)
+
+
+def test_run_defaults_to_open_execution():
+    idx = pd.date_range("2024-01-01", periods=5, freq="B")
+    w = pd.DataFrame({"A": [0.0, 0.5, 0.5, 0.0, 0.0]}, index=idx)
+    close = pd.DataFrame({"A": [10.0, 10.5, 11.0, 10.8, 10.9]}, index=idx)
+    opn = pd.DataFrame({"A": [10.0, 10.0, 10.6, 10.4, 10.5]}, index=idx)
+    r_def = run.run(w, opn, close, cost_bps=0, cash_rate=0)
+    r_open = run.run(w, opn, close, cost_bps=0, cash_rate=0, execution="open")
+    r_close = run.run(w, opn, close, cost_bps=0, cash_rate=0, execution="close")
+    pd.testing.assert_series_equal(r_def.nav, r_open.nav)
+    assert not r_def.nav.equals(r_close.nav)
 
