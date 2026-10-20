@@ -1,6 +1,7 @@
 """端到端流水线：数据 → 信号 → 组合 → 执行 → 回测。"""
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 import duckdb
@@ -214,7 +215,7 @@ def _precompute_signals(close, opn, amt, indices, params, cat) -> dict:
 
     return dict(
         m21=m21, m60=m60, ret=ret, vol60=vol60, n_days=n_days, avg20=avg20,
-        regime=regime, nas_mom=nas_mom, gold_mom=gold_mom, nas_vol=nas_vol,
+        regime=regime, comp=comp, nas_mom=nas_mom, gold_mom=gold_mom, nas_vol=nas_vol,
         gold_vol=gold_vol, cyb_vol=cyb_vol, cyb_below=cyb_below, cyb_drop=cyb_drop,
         llt80=llt80, close=close, zbias=zbias, rev_active=rev_active,
         risk_tickers=risk_tickers, def_tickers=def_tickers, cat=cat,
@@ -270,20 +271,24 @@ def _daily_target(i: int, d, sig: dict, params: dict,
         nasdaq_exit_threshold=params["multi_asset"]["nasdaq_exit_threshold"],
         gold_exit_threshold=params["multi_asset"]["gold_exit_threshold"])
     # 分层风控：市场状态 × A 股趋势 × 波动率控制，共同缩放风险预算
-    rscale = risk_layers.risk_scale(
+    rscale_base = risk_layers.risk_scale(
         regime.loc[d],
         bool(cyb_below.loc[d]) is False if pd.notna(cyb_below.loc[d]) else True,
         float(cyb_drop.loc[d]) if pd.notna(cyb_drop.loc[d]) else 0.0,
         drop_threshold=params["risk"]["index_drop_20d"],
     )
+    vol_scale_risk = 1.0
     if pd.notna(cyb_vol.loc[d]):
-        rscale *= risk_layers.vol_scale(float(cyb_vol.loc[d]),
-                                        params["risk"]["vol_target_risk"])
+        vol_scale_risk = risk_layers.vol_scale(float(cyb_vol.loc[d]),
+                                               params["risk"]["vol_target_risk"])
+    rscale = rscale_base * vol_scale_risk
     risk_budget = base["risk"] * rscale
 
     target = {}
     risk_score = pd.Series(np.nan, index=risk_tickers)
     keep: list[str] = []
+    cands: list[str] = []
+    score: pd.Series = pd.Series(dtype=float)
     # 预热门限（既有设定）：回测起点后前 170 个交易日不建风险仓。
     if risk_budget > 0 and i >= 170:
         # point-in-time 可投资风险池：上市天数 + 20 日均成交额过滤
@@ -322,9 +327,11 @@ def _daily_target(i: int, d, sig: dict, params: dict,
             elif len(keep) == 1:
                 target[keep[0]] = risk_budget
     # 单 ETF 过热退出：风险资产 HRP 配权后、纳指/黄金之前归零过热标的
+    pre_overheat = set(target)
     target = _apply_overheat(
         target, sig["close"].loc[d], sig["llt80"].loc[d],
         params["risk"]["overheat_pct"])
+    overheat_exited = sorted(pre_overheat - set(target))
     if base["nasdaq"] > 0:
         # 纳指按 60 日波动向 18% 目标缩放（只减不加）
         v = risk_layers.vol_scale(float(nas_vol.loc[d]) if pd.notna(nas_vol.loc[d]) else 0.0,
@@ -354,7 +361,28 @@ def _daily_target(i: int, d, sig: dict, params: dict,
             for t in current_defn:
                 target[t] = target.get(t, 0.0) + w
 
-    return target, last_def_update, current_defn, risk_score, keep
+    # 决策轨迹采集（只读既有中间量，不参与任何决策）
+    trace = {
+        "comp_score": float(sig["comp"].loc[d]) if pd.notna(sig["comp"].loc[d]) else float("nan"),
+        "regime": str(regime.loc[d]),
+        "cyb_below": bool(cyb_below.loc[d]) if pd.notna(cyb_below.loc[d]) else False,
+        "cyb_drop": float(cyb_drop.loc[d]) if pd.notna(cyb_drop.loc[d]) else float("nan"),
+        "cyb_vol": float(cyb_vol.loc[d]) if pd.notna(cyb_vol.loc[d]) else float("nan"),
+        "risk_scale": float(rscale_base),
+        "vol_scale_risk": float(vol_scale_risk),
+        "risk_budget": float(risk_budget),
+        "nas_mom": nas_sig, "gold_mom": gold_sig,
+        "nas_vol": float(nas_vol.loc[d]) if pd.notna(nas_vol.loc[d]) else float("nan"),
+        "gold_vol": float(gold_vol.loc[d]) if pd.notna(gold_vol.loc[d]) else float("nan"),
+        "nasdaq_weight": float(target.get(nasdaq, 0.0)),
+        "gold_weight": float(target.get(gold, 0.0)),
+        "cands": cands,
+        "keep": keep,
+        "score": {t: float(score[t]) for t in cands if pd.notna(score.get(t))},
+        "overheat_exited": overheat_exited,
+        "defensive": list(current_defn),
+    }
+    return target, last_def_update, current_defn, risk_score, keep, trace
 
 
 def _combine_phases(phase_weights: list[pd.Series]) -> pd.Series:
@@ -394,15 +422,25 @@ def _apply_hysteresis(candidate, prev_final, score, risk_tickers, improve):
     """
     held_risk = [t for t in prev_final.index if prev_final[t] > 0 and t in risk_tickers]
     if not held_risk or not all(pd.notna(score.get(t)) for t in held_risk):
-        return candidate
+        return candidate, False, float("nan"), float("nan")
     new_score = float(score.reindex(candidate[candidate > 0].index).dropna().sum())
     old_score = float(score.reindex(held_risk).sum())
     if new_score <= old_score * (1 + improve):
-        return prev_final
-    return candidate
+        return prev_final, True, new_score, old_score
+    return candidate, False, new_score, old_score
 
 
-def build_weights(params: dict, start: str, end: str, context: dict | None = None) -> pd.DataFrame:
+@dataclass
+class BuildResult:
+    """build_weights(with_trace=True) 的返回：权重面板 + 每日决策轨迹 + 信号面板。"""
+    weights: pd.DataFrame
+    traces: list[dict]
+    days: pd.DatetimeIndex
+    sig: dict
+
+
+def build_weights(params: dict, start: str, end: str, context: dict | None = None,
+                  with_trace: bool = False):
     """计算策略目标权重面板（index=回测交易日、columns=标的、每行和 ≤ 1）。
 
     主线：市场状态定基础风险预算 → 风险池横截面动量排名 + 去重 + HRP 配权
@@ -431,22 +469,32 @@ def build_weights(params: dict, start: str, end: str, context: dict | None = Non
     prev_final = pd.Series(0.0, index=cols)
     port_rets: list[float] = []
     improve = params["execution"]["hysteresis_improve"]
+    traces: list[dict] = []
 
     for i, d in enumerate(days):
-        target, last_def_update, current_defn, score, keep = _daily_target(
+        target, last_def_update, current_defn, score, keep, trace = _daily_target(
             i, d, sig, params, last_def_update, current_defn)
         phase_weights[i % 5] = pd.Series(target).reindex(cols).fillna(0.0)
         candidate = _combine_phases(phase_weights)
-        candidate = _apply_hysteresis(
+        candidate, held, new_score, old_score = _apply_hysteresis(
             candidate, prev_final, score, sig["risk_tickers"], improve)
         # port_rets 只 append「上一日最终权重 × 当日收益」，只用 ≤d 的信息（无前视）。
         if i > 0:
             prev_ret = float((prev_final * sig["ret"].loc[d, cols].fillna(0.0)).sum())
             port_rets.append(prev_ret)
-        final, _ = _apply_portfolio_vol_cap(candidate, port_rets, params)
+        final, scale = _apply_portfolio_vol_cap(candidate, port_rets, params)
         weights.loc[d, final.index] = final.values
         prev_final = final
+        if with_trace:
+            trace["hysteresis_held"] = held
+            trace["new_score"] = new_score
+            trace["old_score"] = old_score
+            trace["vol_cap_scale"] = scale
+            trace["total_weight"] = float(final.sum())
+            traces.append(trace)
 
+    if with_trace:
+        return BuildResult(weights=weights, traces=traces, days=days, sig=sig)
     return weights
 
 

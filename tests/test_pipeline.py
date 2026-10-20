@@ -25,6 +25,16 @@ def test_range_score_default_50_50():
     pd.testing.assert_series_equal(c, pipe._zscore(mom))
 
 
+def test_build_weights_with_trace_keeps_weights_identical():
+    p = config.load_params()
+    base = pipe.build_weights(p, "2024-01-01", "2024-06-30")
+    res = pipe.build_weights(p, "2024-01-01", "2024-06-30", with_trace=True)
+    pd.testing.assert_frame_equal(res.weights, base)
+    assert len(res.traces) == len(base.index)
+    assert {"regime", "risk_budget", "cands", "keep", "hysteresis_held",
+            "total_weight"} <= set(res.traces[0])
+
+
 def test_portfolio_vol_cap_only_shrinks():
     params = config.load_params()
     cand = pd.Series({"A": 0.5, "B": 0.3})
@@ -64,16 +74,18 @@ def test_hysteresis_holds_when_no_improvement():
     candidate = pd.Series({"B": 1.0})
     prev = pd.Series({"A": 1.0})
     score = pd.Series({"A": 0.80, "B": 0.81})
-    out = pipe._apply_hysteresis(candidate, prev, score, ["A", "B"], 0.02)
+    out, held, new, old = pipe._apply_hysteresis(candidate, prev, score, ["A", "B"], 0.02)
     pd.testing.assert_series_equal(out, prev)
+    assert held is True
 
 
 def test_hysteresis_switches_when_improves():
     candidate = pd.Series({"B": 1.0})
     prev = pd.Series({"A": 1.0})
     score = pd.Series({"A": 0.80, "B": 0.90})
-    out = pipe._apply_hysteresis(candidate, prev, score, ["A", "B"], 0.02)
+    out, held, new, old = pipe._apply_hysteresis(candidate, prev, score, ["A", "B"], 0.02)
     pd.testing.assert_series_equal(out, candidate)
+    assert held is False
 
 
 def _synthetic_panels():
