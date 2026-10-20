@@ -491,6 +491,7 @@ def build_weights(params: dict, start: str, end: str, context: dict | None = Non
             trace["old_score"] = old_score
             trace["vol_cap_scale"] = scale
             trace["total_weight"] = float(final.sum())
+            trace["final_weights"] = {t: float(v) for t, v in final.items() if v > 0}
             traces.append(trace)
 
     if with_trace:

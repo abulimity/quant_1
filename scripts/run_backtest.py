@@ -11,7 +11,7 @@ import pandas as pd
 from etf_rotation import __version__, config
 from etf_rotation.backtest import run
 from etf_rotation.data import snapshot
-from etf_rotation.evaluation import metrics, registry
+from etf_rotation.evaluation import metrics, observability, registry
 from etf_rotation.pipeline import build_weights, compute_benchmark, load_prices
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -38,7 +38,8 @@ def main() -> None:
     start, end = args.start, args.end
     print(f"etf-rotation v{__version__}")
     print(f"building weights {start}..{end}")
-    weights = build_weights(p, start, end)
+    build = build_weights(p, start, end, with_trace=True)
+    weights = build.weights
     close, opn, _ = load_prices()
     # 把价格面板对齐到权重面板的交易日与标的列，避免回测时列/索引错位
     close = close.reindex(index=weights.index, columns=weights.columns)
@@ -66,6 +67,10 @@ def main() -> None:
     compute_benchmark(p, start, end).to_csv(out / "benchmark.csv")
     (out / "metrics.json").write_text(
         json.dumps(s, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    # 信号/决策快照落盘（观测层，只旁路记录，不参与决策）
+    diary, tk = observability.build_frames(build.days, build.traces, build.sig, p)
+    observability.write(out, diary, tk)
 
     flat = config.flatten_params(p)
     flat["_start"], flat["_end"] = start, end
