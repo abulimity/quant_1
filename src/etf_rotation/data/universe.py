@@ -31,22 +31,3 @@ def classify(fund_basic: pd.DataFrame) -> pd.Series:
     out.index = fund_basic["ts_code"]
     return out.rename("category")
 
-
-def build_pool(
-    bars: pd.DataFrame,
-    meta: pd.DataFrame,
-    as_of: pd.Timestamp,
-    min_days: int = 126,
-    min_amount: float = 5_000_000,
-) -> pd.DataFrame:
-    """point-in-time 可投资池：截至 as_of 的上市天数 ≥ min_days 且 20 日均成交额 ≥ min_amount。"""
-    if "amount" not in bars.columns:
-        bars = bars.assign(amount=bars["close"] * bars["volume"] * 100)
-    recent = bars[bars["ts"] <= as_of]
-    agg = recent.groupby("symbol_id").agg(
-        listed_days=("ts", "nunique"),
-        avg_amount20=("amount", lambda s: s.tail(20).mean()),
-    ).reset_index()
-    pool = agg[(agg["listed_days"] >= min_days) & (agg["avg_amount20"] >= min_amount)]
-    return pool.merge(meta, on="symbol_id", how="left")
-
