@@ -10,6 +10,7 @@ import pandas as pd
 
 from etf_rotation import __version__, config
 from etf_rotation.backtest import run
+from etf_rotation.data import snapshot
 from etf_rotation.evaluation import metrics, registry
 from etf_rotation.pipeline import build_weights, compute_benchmark, load_prices
 
@@ -68,11 +69,17 @@ def main() -> None:
 
     flat = config.flatten_params(p)
     flat["_start"], flat["_end"] = start, end
-    run_id = registry.config_hash(flat)
+    data_snap = snapshot.data_snapshot_id()
+    gsha = registry.git_sha()
+    run_id = registry.run_identity(
+        flat, git_sha=gsha, data_snapshot_id=data_snap,
+        execution=args.execution, signal_version=gsha,
+    )
     registry.register_run(
         ROOT / "data" / "warehouse.duckdb", run_id, flat, s,
         {"equity": str(out / "equity.csv"), "weights": str(out / "weights.parquet"),
          "benchmark": str(out / "benchmark.csv"), "metrics": str(out / "metrics.json")},
+        data_snapshot_id=data_snap, git_sha=gsha,
     )
     print(f"registered run {run_id}")
     print(f"saved to {out}")
