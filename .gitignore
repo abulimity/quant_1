@@ -25,6 +25,7 @@ reports/*.baseline.*
 reports/runs/
 reports/grid.json
 reports/attribution.json
+reports/ablation.json
 reports/signals/
 
 # OS

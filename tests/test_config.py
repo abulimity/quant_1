@@ -55,6 +55,14 @@ def test_load_params_validates_defaults():
     assert p["market_state"]["bull_threshold"] == 0.30
 
 
+def test_mechanism_switches_default_on():
+    p = config.load_params()
+    assert p["mechanisms"] == {
+        "phases": True, "hysteresis": True, "reversal": True,
+        "overheat": True, "vol_cap": True,
+    }
+
+
 def test_hydra_grid_config_loads():
     from hydra import compose, initialize
     from hydra.core.global_hydra import GlobalHydra

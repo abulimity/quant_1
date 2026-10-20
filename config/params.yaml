@@ -45,6 +45,12 @@ execution:
   phase_interval: 5
   hysteresis_improve: 0.02   # H4
   gap_delay_pct: 0.01
+mechanisms:                     # 机制开关（ablation 用，默认全 on）
+  phases: true
+  hysteresis: true
+  reversal: true
+  overheat: true
+  vol_cap: true
 costs:
   one_side_bps: 8
   cash_rate_annual: 0.018

@@ -305,7 +305,7 @@ def _daily_target(i: int, d, sig: dict, params: dict,
                    + w_long_rk * m60.loc[d, elig].rank(pct=True))
             mom = mom[m21.loc[d, elig] > 0]
             # 震荡市叠加反转分（H5/H6），其余市场状态沿用纯动量排名
-            if regime.loc[d] == "range":
+            if regime.loc[d] == "range" and params["mechanisms"]["reversal"]:
                 score = _range_score(mom, sig["zbias"].loc[d, mom.index],
                                      sig["rev_active"].loc[d, mom.index],
                                      momentum_weight=params["reversal"]["momentum_weight"])
@@ -328,9 +328,10 @@ def _daily_target(i: int, d, sig: dict, params: dict,
                 target[keep[0]] = risk_budget
     # 单 ETF 过热退出：风险资产 HRP 配权后、纳指/黄金之前归零过热标的
     pre_overheat = set(target)
-    target = _apply_overheat(
-        target, sig["close"].loc[d], sig["llt80"].loc[d],
-        params["risk"]["overheat_pct"])
+    if params["mechanisms"]["overheat"]:
+        target = _apply_overheat(
+            target, sig["close"].loc[d], sig["llt80"].loc[d],
+            params["risk"]["overheat_pct"])
     overheat_exited = sorted(pre_overheat - set(target))
     if base["nasdaq"] > 0:
         # 纳指按 60 日波动向 18% 目标缩放（只减不加）
@@ -475,14 +476,23 @@ def build_weights(params: dict, start: str, end: str, context: dict | None = Non
         target, last_def_update, current_defn, score, keep, trace = _daily_target(
             i, d, sig, params, last_def_update, current_defn)
         phase_weights[i % 5] = pd.Series(target).reindex(cols).fillna(0.0)
-        candidate = _combine_phases(phase_weights)
-        candidate, held, new_score, old_score = _apply_hysteresis(
-            candidate, prev_final, score, sig["risk_tickers"], improve)
+        if params["mechanisms"]["phases"]:
+            candidate = _combine_phases(phase_weights)
+        else:
+            candidate = phase_weights[i % 5]
+        if params["mechanisms"]["hysteresis"]:
+            candidate, held, new_score, old_score = _apply_hysteresis(
+                candidate, prev_final, score, sig["risk_tickers"], improve)
+        else:
+            held, new_score, old_score = False, float("nan"), float("nan")
         # port_rets 只 append「上一日最终权重 × 当日收益」，只用 ≤d 的信息（无前视）。
         if i > 0:
             prev_ret = float((prev_final * sig["ret"].loc[d, cols].fillna(0.0)).sum())
             port_rets.append(prev_ret)
-        final, scale = _apply_portfolio_vol_cap(candidate, port_rets, params)
+        if params["mechanisms"]["vol_cap"]:
+            final, scale = _apply_portfolio_vol_cap(candidate, port_rets, params)
+        else:
+            final, scale = candidate, 1.0
         weights.loc[d, final.index] = final.values
         prev_final = final
         if with_trace:

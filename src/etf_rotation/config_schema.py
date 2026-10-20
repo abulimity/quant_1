@@ -48,6 +48,11 @@ SCHEMA = {
     "execution.phase_interval": (int, 1, 100),
     "execution.hysteresis_improve": (float, 0, 1),
     "execution.gap_delay_pct": (float, 0, 1),
+    "mechanisms.phases": (bool, None, None),
+    "mechanisms.hysteresis": (bool, None, None),
+    "mechanisms.reversal": (bool, None, None),
+    "mechanisms.overheat": (bool, None, None),
+    "mechanisms.vol_cap": (bool, None, None),
     "costs.one_side_bps": (int, 0, 1000),
     "costs.cash_rate_annual": (float, 0, 1),
     "universe.min_listed_days": (int, 1, 10000),
@@ -75,6 +80,8 @@ def _check_type(typ: type, val) -> bool:
         return isinstance(val, int) and not isinstance(val, bool)
     if typ is float:
         return isinstance(val, (int, float)) and not isinstance(val, bool)
+    if typ is bool:
+        return isinstance(val, bool)
     if typ is list:
         return isinstance(val, list)
     if typ is str:
