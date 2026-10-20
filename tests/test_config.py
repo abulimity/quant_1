@@ -63,6 +63,18 @@ def test_mechanism_switches_default_on():
     }
 
 
+def test_set_nested_validates_out_of_range():
+    p = config.load_params()
+    with pytest.raises(ConfigError):
+        config.set_nested(p, "market_state.bull_threshold", "2.0")
+
+
+def test_set_nested_validates_unknown_key():
+    p = config.load_params()
+    with pytest.raises(ConfigError):
+        config.set_nested(p, "typo.key", "1")
+
+
 def test_hydra_grid_config_loads():
     from hydra import compose, initialize
     from hydra.core.global_hydra import GlobalHydra

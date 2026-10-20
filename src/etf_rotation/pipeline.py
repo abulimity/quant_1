@@ -502,6 +502,9 @@ def build_weights(params: dict, start: str, end: str, context: dict | None = Non
             trace["vol_cap_scale"] = scale
             trace["total_weight"] = float(final.sum())
             trace["final_weights"] = {t: float(v) for t, v in final.items() if v > 0}
+            # 覆盖为最终（平滑后）口径，与 total_weight/cash_weight 一致
+            trace["nasdaq_weight"] = float(final.get(nasdaq, 0.0))
+            trace["gold_weight"] = float(final.get(gold, 0.0))
             traces.append(trace)
 
     if with_trace:
@@ -510,18 +513,24 @@ def build_weights(params: dict, start: str, end: str, context: dict | None = Non
 
 
 def market_regime(start: str, end: str) -> pd.Series:
-    """按三指数 LLT 复合分划分 bull/range/bear（与策略一致）。"""
+    """按三指数 LLT 复合分划分 bull/range/bear（阈值读 params，与策略一致）。"""
     indices = load_indices()
     days = calendar.trading_days(start, end)
+    p = config.load_params()
     comp = ms.composite_score(
         {
             "sh": indices["000001.SH"],
             "zz2000": indices["932000.CSI"],
             "zzhl": indices["000922.CSI"],
-        }
+        },
+        alpha=p["market_state"]["alpha"],
+        win=p["market_state"]["slope_window"],
+        slope_up=p["market_state"]["slope_up"],
+        slope_down=p["market_state"]["slope_down"],
     ).reindex(days)
+    bull, bear = p["market_state"]["bull_threshold"], p["market_state"]["bear_threshold"]
     return comp.map(
-        lambda v: "bull" if v >= 0.35 else ("bear" if v <= -0.35 else "range")
+        lambda v: "bull" if v >= bull else ("bear" if v <= bear else "range")
     )
 
 

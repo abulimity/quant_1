@@ -33,6 +33,23 @@ def test_build_weights_with_trace_keeps_weights_identical():
     assert len(res.traces) == len(base.index)
     assert {"regime", "risk_budget", "cands", "keep", "hysteresis_held",
             "total_weight"} <= set(res.traces[0])
+    # 观测层口径一致：nasdaq/gold 权重 = 最终权重（平滑后），与 total_weight 同源
+    nasdaq, gold = p["nasdaq_etf"], p["gold_etf"]
+    for tr in res.traces:
+        assert tr["nasdaq_weight"] == tr["final_weights"].get(nasdaq, 0.0)
+        assert tr["gold_weight"] == tr["final_weights"].get(gold, 0.0)
+
+
+def test_market_regime_uses_params_thresholds(monkeypatch):
+    idx = pd.date_range("2024-01-01", periods=3, freq="B")
+    comp = pd.Series([0.32, 0.0, -0.32], index=idx)
+    monkeypatch.setattr(pipe.ms, "composite_score", lambda *a, **k: comp)
+    monkeypatch.setattr(pipe.calendar, "trading_days", lambda *a, **k: idx)
+    monkeypatch.setattr(pipe, "load_indices",
+                        lambda: {"000001.SH": None, "932000.CSI": None, "000922.CSI": None})
+    regime = pipe.market_regime("2024-01-01", "2024-01-03")
+    assert regime.iloc[0] == "bull"    # 0.32 >= 0.30（bull 阈值，旧硬编码 0.35 会判 range）
+    assert regime.iloc[2] == "range"   # -0.32 在 (-0.35, 0.30) 之间
 
 
 def test_portfolio_vol_cap_only_shrinks():

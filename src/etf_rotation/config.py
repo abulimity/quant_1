@@ -44,12 +44,13 @@ def _coerce(value: str):
 
 
 def set_nested(params: dict, path: str, value: str) -> None:
-    """按 'a.b.c' 路径写入参数，自动推断类型。"""
+    """按 'a.b.c' 路径写入参数，自动推断类型，并立即做 schema 校验（越界/未知键报错）。"""
     keys = path.split(".")
     node = params
     for k in keys[:-1]:
         node = node.setdefault(k, {})
     node[keys[-1]] = _coerce(value)
+    validate_params(params)
 
 
 def flatten_params(params: dict) -> dict:
