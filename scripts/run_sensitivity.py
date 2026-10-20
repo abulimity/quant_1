@@ -7,6 +7,7 @@ from pathlib import Path
 import pandas as pd
 
 from etf_rotation.execution import shift_weights
+from etf_rotation import config
 from etf_rotation.backtest import run
 from etf_rotation.evaluation import metrics, overfitting
 from etf_rotation.pipeline import load_prices
@@ -21,6 +22,7 @@ def main() -> None:
     变体计算，报告里注明「仅作参考不作结论」。
     """
     weights = pd.read_parquet(ROOT / "reports/weights.parquet")
+    cash_rate = config.load_params()["costs"]["cash_rate_annual"]
     close, opn, _ = load_prices()
     close = close.reindex(index=weights.index, columns=weights.columns)
     opn = opn.reindex(index=weights.index, columns=weights.columns)
@@ -28,7 +30,7 @@ def main() -> None:
     rows = []
     sharpes = []
     for cost in [0, 8, 16, 24]:  # 单边成本 0/8/16/24bp
-        r = run.run(eff, opn, close, cost_bps=cost, cash_rate=0.018)
+        r = run.run(eff, opn, close, cost_bps=cost, cash_rate=cash_rate)
         s = metrics.from_stats(r.stats)
         sharpes.append(s["sharpe"])
         rows.append({"cost_bps": cost, "ann_return": s["ann_return"],
