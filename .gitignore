@@ -27,6 +27,7 @@ reports/grid.json
 reports/attribution.json
 reports/ablation.json
 reports/assumption_sensitivity.json
+reports/data_quality.json
 reports/signals/
 
 # OS
