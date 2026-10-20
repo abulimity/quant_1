@@ -12,12 +12,12 @@ reversal:
 market_state:
   alpha: 0.10
   slope_window: 8
-  bull_threshold: 0.35
+  bull_threshold: 0.30
   bear_threshold: -0.35
   slope_up: 1.005
   slope_down: 0.995
 dedupe:
-  corr_threshold: 0.80
+  corr_threshold: 0.85
   max_holdings: 10
 multi_asset:
   risk: 0.50

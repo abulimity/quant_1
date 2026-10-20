@@ -120,7 +120,7 @@ def test_signal_cache_key_changes_with_window():
 def test_signal_cache_key_changes_with_bull_threshold():
     p1 = config.load_params()
     p2 = config.load_params()
-    p2["market_state"]["bull_threshold"] = 0.30
+    p2["market_state"]["bull_threshold"] = 0.40
     assert pipe.signal_cache_key(p1) != pipe.signal_cache_key(p2)
 
 

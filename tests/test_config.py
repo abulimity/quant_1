@@ -7,7 +7,8 @@ from etf_rotation.config_schema import ConfigError, validate_params
 def test_load_params_defaults():
     p = config.load_params()
     assert p["trend"]["windows"] == [21, 60]
-    assert p["dedupe"]["corr_threshold"] == 0.80
+    assert p["dedupe"]["corr_threshold"] == 0.85
+    assert p["market_state"]["bull_threshold"] == 0.30
     assert p["costs"]["one_side_bps"] == 8
 
 
@@ -50,8 +51,8 @@ def test_validate_params_rejects_unknown_key():
 
 def test_load_params_validates_defaults():
     p = config.load_params()
-    assert p["dedupe"]["corr_threshold"] == 0.80
-    assert p["market_state"]["bull_threshold"] == 0.35
+    assert p["dedupe"]["corr_threshold"] == 0.85
+    assert p["market_state"]["bull_threshold"] == 0.30
 
 
 def test_hydra_grid_config_loads():
