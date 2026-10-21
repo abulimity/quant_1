@@ -51,7 +51,7 @@
 | 假设敏感性结论仍无多重检验/OOS | 报告含 18 变体 DSR + haircut + H1/H7 子区间表，且据结果降级措辞 | Task 2 |
 | 机制 ablation 仍未登记 | 跑完脚本后 duckdb 出现 ≥5 条 `mechanisms.*=false` 的 run | Task 3 |
 | Hydra 网格仍 close | `grid.yaml` execution==open，测试锁定 | Task 5 |
-| 文档测试数仍不一致 | README/CHANGELOG 统一 93，grep 无 83/87 残留 | Task 9 |
+| 文档测试数仍不一致 | README/CHANGELOG 统一 96，grep 无 83/87 残留 | Task 9 |
 
 ---
 
@@ -233,13 +233,13 @@ def test_deflated_sharpe_significant_with_large_n_obs():
 - Modify: `CHANGELOG.md`（v1.1.1 条目）
 - Modify: `src/etf_rotation/__init__.py`（`__version__`）
 
-- [ ] **Step 1:** `README.md`「测试：87 passed（另有 3 个慢测…）」改为「测试：93 passed」。`CHANGELOG.md` 顶部加 `## v1.1.1 (2026-10-21)` 条目，列出 H1–L7 修复要点，测试数写 93。
+- [ ] **Step 1:** `README.md`「测试：87 passed（另有 3 个慢测…）」改为「测试：96 passed」。`CHANGELOG.md` 顶部加 `## v1.1.1 (2026-10-21)` 条目，列出 H1–L7 修复要点，测试数写 96。
 
 - [ ] **Step 2:** `__init__.py` 的 `__version__` 改 `"1.1.1"`。
 
 - [ ] **Step 3:** 全量 `pytest -q` 全绿后 commit，并在该 commit 打 tag：
   ```bash
-  git commit -m "docs: unify test count to 93; bump v1.1.1"
+  git commit -m "docs: unify test count to 96; bump v1.1.1"
   git tag v1.1.1
   ```
   （`v1.1.0` 不动，避免移动可能已推送的 tag；v1.1.1 覆盖从 Task 1 起的全部整改。）
@@ -260,12 +260,12 @@ Task 1（DSR 修复）→ Task 2（复用修复后的 DSR 重算）为强依赖�
 
 ## 最终验收 checklist（reviewer 用）
 
-- [ ] 全量 `pytest -q` 全绿（含新增 DSR/registry 测试），测试数统一 93。
+- [ ] 全量 `pytest -q` 全绿（含新增 DSR/registry 测试），测试数统一 96。
 - [ ] `deflated_sharpe` 标准误基于 `n_obs`；`python -c "...deflated_sharpe([1.5]*3,3,2000)"` >0.95。
 - [ ] `reports/差距归因.md` 含 18 变体 DSR + haircut + H1/H7 OOS 子区间表，且措辞与结果一致（显著才说显著）。
 - [ ] 机制 ablation 变体在 `data/warehouse.duckdb` 可查（≥5 条 `mechanisms.*=false`）。
 - [ ] `reports/exposure.json` 生成，§5 有实际 HHI/有效持仓数数字。
 - [ ] `config/hydra/grid.yaml` 默认 `execution: open`，测试锁定。
 - [ ] registry `runs` 表含 `execution` 列；二次登记同 run_id 记 `superseded` 且不覆写 metrics。
-- [ ] `回测报告.md` 成本/OOS/执行精度均为 open 口径；README/CHANGELOG 测试数 93；`v1.1.1` 已打 tag 且指向 HEAD。
+- [ ] `回测报告.md` 成本/OOS/执行精度均为 open 口径；README/CHANGELOG 测试数 96；`v1.1.1` 已打 tag 且指向 HEAD。
 - [ ] `weights.parquet` 与 `weights.baseline.parquet` 逐值一致（本计划未改数值）。

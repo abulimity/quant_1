@@ -78,6 +78,36 @@ def test_register_run_marks_superseded(tmp_path: Path, monkeypatch):
     con.close()
 
 
+def test_register_run_migrates_old_schema(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    db = tmp_path / "r.duckdb"
+    con = duckdb.connect(str(db))
+    # 旧 schema：runs 无 execution / superseded 列
+    con.execute("""
+        CREATE TABLE runs (
+            run_id VARCHAR PRIMARY KEY, spec_id VARCHAR NOT NULL, engine VARCHAR NOT NULL,
+            origin VARCHAR NOT NULL, created_at TIMESTAMP NOT NULL,
+            data_snapshot_id VARCHAR NOT NULL, env_lock_hash VARCHAR NOT NULL,
+            git_sha VARCHAR NOT NULL, params_json VARCHAR NOT NULL, status VARCHAR NOT NULL,
+            CHECK (status IN ('ok', 'failed', 'partial')))
+    """)
+    con.execute("""CREATE TABLE run_metrics (
+        run_id VARCHAR NOT NULL, metric VARCHAR NOT NULL, value DOUBLE NOT NULL,
+        PRIMARY KEY (run_id, metric))""")
+    con.execute("INSERT INTO runs VALUES ('old1', 'etf-rotation', 'bt', 'run_backtest', "
+                "'2026-01-01', '', '', '', '{}', 'ok')")
+    con.close()
+
+    registry.register_run(db, "new1", {"a": 1}, {"sharpe": 1.0}, {},
+                          execution="open", report_root=tmp_path / "reports")
+    con = duckdb.connect(str(db))
+    cols = set(con.execute("DESCRIBE runs").df()["column_name"])
+    assert {"execution", "superseded"} <= cols
+    assert con.execute("SELECT execution FROM runs WHERE run_id='new1'").fetchone()[0] == "open"
+    assert con.execute("SELECT execution FROM runs WHERE run_id='old1'").fetchone()[0] == "close"
+    con.close()
+
+
 def test_hash_files_stable_and_order_independent():
     with tempfile.TemporaryDirectory() as d:
         d = Path(d)

@@ -36,7 +36,7 @@ def git_sha() -> str:
 
 def register_run(db_path: Path, run_id: str, params: dict, metrics: dict,
                  artifacts: dict, *, data_snapshot_id: str = "", env_lock_hash: str = "",
-                 git_sha: str = "", execution: str = "close",
+                 git_sha: str = "", execution: str = "open",
                  report_root: Path = Path("reports")) -> str:
     """把一次回测的 params/metrics/产物路径写入 duckdb 并落 manifest.json。
 

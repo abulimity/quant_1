@@ -6,7 +6,7 @@
 
 - 版本：v1.1.1（见 CHANGELOG.md）
 - 基准结果（默认 open 口径 + 候选参数）：2019-01 ~ 2026-07 年化 9.61% / 最大回撤 -15.79% / Calmar 0.61；close 口径候选 12.31% / -12.21% / Calmar 1.01（研报对标 20.74% / -10.13% / 2.05）
-- 测试：96 passed
+- 测试：97 passed
 - 待办与已知限制见 TODO.md；复现差异见 reports/回测报告.md；调参记录见 reports/调参记录.md
 
 ## 环境
@@ -46,9 +46,9 @@ src/etf_rotation/
   data/               calendar / curate(复权/校验) / ingest(tushare) / universe(point-in-time)
   signals/            trend(时间加权回归) / reversal(ZBias) / market_state(LLT)
   portfolio/          dedupe / hrp(PyPortfolioOpt) / multi_asset / risk_layers / defensive
-  execution/          phases(五相位) / hysteresis / gap_delay(T+1跳空)
-  backtest/run.py     bt 引擎封装（现金/持仓/净值记账、成本、现金计息）
-  evaluation/         metrics / sensitivity / overfitting(DSR) / plots / trades
+  execution/          shift_weights(T+1生效)；五相位/迟滞在 pipeline.py，跳空顺延在 backtest/open_rebalance.py
+  backtest/run.py     bt 引擎封装（现金/持仓/净值记账、成本、现金计息）+ OpenRebalance(T+1开盘)
+  evaluation/         metrics / sensitivity / overfitting(DSR) / registry / attribution / exposure / observability / plots / trades
   pipeline.py         端到端组装
 scripts/              入口脚本
 reports/              净值、指标、敏感性、可视化报告、交易明细（生成物）

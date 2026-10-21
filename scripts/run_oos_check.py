@@ -1,7 +1,11 @@
 """样本外子区间复核（open 口径）：2019–2023 vs 2024–2026。
 
 用法：scripts/run_oos_check.py --param trend.weighting=exp [--param a.b=v ...]
-对给定参数覆盖，在两个子区间各跑一次 build_weights + bt 记账，落盘 reports/oos_check.json。
+
+方法：在**全窗口**（2019→2026）一次性建权（保证 warmup `i>=170`/`i>=60`、五相位、
+整组迟滞等状态都以 2019 起点为准、不因子区间边界重置），再对「已 shift(1) 的有效权重」
+按子区间切片跑 bt。切勿对子区间独立 `build_weights`：其循环用相对索引 `i`，会把 2024
+边界当作起点，导致 2024 前 ~170 日无风险仓（见 test 与审查结论）。
 """
 from __future__ import annotations
 
@@ -17,18 +21,19 @@ from etf_rotation.pipeline import build_weights, load_context
 
 ROOT = Path(__file__).resolve().parents[1]
 KEYS = ("ann_return", "max_drawdown", "sharpe", "calmar")
+FULL_START, FULL_END = "2019-01-01", "2026-07-31"
 SUBPERIODS = [
     ("2019-2023", "2019-01-01", "2023-12-31"),
     ("2024-2026", "2024-01-01", "2026-07-31"),
 ]
 
 
-def _run(p: dict, start: str, end: str, ctx: dict) -> dict:
-    weights = build_weights(p, start, end, context=ctx)
-    close = ctx["close"].reindex(index=weights.index, columns=weights.columns)
-    opn = ctx["opn"].reindex(index=weights.index, columns=weights.columns)
-    eff = shift_weights.shift_weights(weights)  # T 日信号，T+1 生效
-    r = run.run(eff, opn, close, cost_bps=p["costs"]["one_side_bps"],
+def _run_slice(eff, start: str, end: str, ctx: dict, p: dict) -> dict:
+    """对全窗口有效权重按子区间切片后跑 bt（不再 shift，eff 已是 T 日信号/T+1 生效）。"""
+    sub = eff.loc[start:end]
+    close = ctx["close"].reindex(index=sub.index, columns=sub.columns)
+    opn = ctx["opn"].reindex(index=sub.index, columns=sub.columns)
+    r = run.run(sub, opn, close, cost_bps=p["costs"]["one_side_bps"],
                 cash_rate=p["costs"]["cash_rate_annual"], execution="open")
     s = metrics.from_stats(r.stats)
     return {k: s[k] for k in KEYS}
@@ -45,9 +50,12 @@ def main() -> None:
         config.set_nested(p, k, v)
 
     ctx = load_context()
+    weights = build_weights(p, FULL_START, FULL_END, context=ctx)
+    eff = shift_weights.shift_weights(weights)  # T 日信号、T+1 生效
+
     subperiods = {}
     for label, start, end in SUBPERIODS:
-        subperiods[label] = _run(p, start, end, ctx)
+        subperiods[label] = _run_slice(eff, start, end, ctx, p)
 
     out = {"param_overrides": args.param, "subperiods": subperiods}
     (ROOT / "reports" / "oos_check.json").write_text(
