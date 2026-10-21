@@ -40,19 +40,32 @@ def _run_slice(eff, start: str, end: str, ctx: dict, p: dict) -> dict:
 
 
 def main() -> None:
+    """样本外子区间复核：全窗口建权 → 按 2019–2023 / 2024–2026 切片回测。
+
+    关键纪律（见模块 docstring）：必须先在**全窗口**建权、再切片，
+    不能对子区间独立调用 build_weights——后者的循环用相对索引 i，
+    会把 2024 边界当成起点，导致 2024 年初约 170 个交易日没有风险仓，
+    子区间结果被人为压低。
+
+    输出：reports/oos_check.json（各子区间的 ann_return / max_drawdown /
+    sharpe / calmar），并记录本次使用的参数覆写。
+    """
     ap = argparse.ArgumentParser()
     ap.add_argument("--param", action="append", default=[])
     args = ap.parse_args()
 
+    # 逐条应用 --param a.b=c 覆写（写后即做 schema 校验）
     p = config.load_params()
     for kv in args.param:
         k, v = kv.split("=", 1)
         config.set_nested(p, k, v)
 
     ctx = load_context()
+    # 全窗口建权（warmup、五相位、迟滞状态都以 2019 起点为准）
     weights = build_weights(p, FULL_START, FULL_END, context=ctx)
     eff = shift_weights.shift_weights(weights)  # T 日信号、T+1 生效
 
+    # 按子区间切片回测（eff 已是有效权重，不再二次 shift）
     subperiods = {}
     for label, start, end in SUBPERIODS:
         subperiods[label] = _run_slice(eff, start, end, ctx, p)

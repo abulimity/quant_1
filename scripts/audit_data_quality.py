@@ -11,6 +11,17 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def main() -> None:
+    """数据质量复核：分类计数 + 幸存者偏差说明，落盘 reports/data_quality.json。
+
+    输出三部分：
+      ① classification_counts —— 四类标的（risk/bond/money/convertible）的数量分布
+      ② n_etfs / n_delisted  —— 标的总数与已退市数量（退市标的是幸存者偏差的直接来源）
+      ③ survivorship / source_gap —— 两条**声明**：说明 point-in-time 过滤如何降低
+         幸存者偏差，以及 tushare vs Wind 口径差异无法精确量化的边界
+
+    纪律：本脚本给的是「有界 proxy + 明确声明不可精确归因」（设计 D7），
+    不把 proxy 包装成精确结论。
+    """
     fb = load_fund_basic()
     cat = univ.classify(fb)
     counts = {c: int((cat == c).sum()) for c in ("risk", "bond", "money", "convertible", "exclude")}

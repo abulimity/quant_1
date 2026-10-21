@@ -47,10 +47,25 @@ def _run_one(p: dict, start: str, end: str, execution: str, ctx: dict) -> dict:
 
 @hydra.main(version_base=None, config_path="../config/hydra", config_name="grid")
 def main(cfg: DictConfig) -> None:
+    """Hydra 驱动的单参数网格回测（multirun 并行，一次只变一个维度）。
+
+    用法：
+        .venv\\Scripts\\python.exe scripts\\run_grid_hydra.py -m \\
+            param_key=dedupe.corr_threshold param_value=0.75,0.80,0.85
+
+    与 run_grid.py 的分工：
+      run_grid.py       —— 进程内串行扫网格，输出稳健性分数/悬崖/DSR 汇总
+      run_grid_hydra.py —— Hydra multirun 并行，每个变体一个进程，
+                           通过 registry 落库，适合大网格
+    本函数只负责「把 Hydra 的一组配置翻译成一次单变体回测」，
+    网格展开与并行调度由 Hydra 的 -m 语法负责。
+    """
+    # 以默认参数为底，只覆写本次 multirun 指定的那一个参数
     p = config.load_params()
     config.set_nested(p, cfg.param_key, str(cfg.param_value))
     ctx = load_context()
     s = _run_one(p, cfg.start, cfg.end, cfg.execution, ctx)
+    # 打印精简结果（完整指标已登记到 warehouse 的 runs 表）
     print(json.dumps({"param_key": cfg.param_key, "param_value": cfg.param_value,
                       "ann_return": s["ann_return"], "sharpe": s["sharpe"],
                       "max_drawdown": s["max_drawdown"], "calmar": s["calmar"]},

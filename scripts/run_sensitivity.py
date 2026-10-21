@@ -30,7 +30,9 @@ def main() -> None:
     rows = []
     sharpes = []
     n_obs = 0
+    # 成本档：单边 0/8/16/24 bp（0 为理论上限，用来量出「成本吃掉多少收益」）
     for cost in [0, 8, 16, 24]:  # 单边成本 0/8/16/24bp
+        # 只重跑 bt 记账，不重建权重 —— 这是本脚本比 run_grid 快的根本原因
         r = run.run(eff, opn, close, cost_bps=cost, cash_rate=cash_rate)
         s = metrics.from_stats(r.stats)
         sharpes.append(s["sharpe"])
@@ -39,6 +41,7 @@ def main() -> None:
                      "max_drawdown": s["max_drawdown"], "sharpe": s["sharpe"],
                      "calmar": s["calmar"]})
     print(json.dumps(rows, ensure_ascii=False, indent=2))
+    # 多重检验校正：4 档成本高度相关，DSR 仅作参考不作结论
     dsr = overfitting.deflated_sharpe(sharpes, len(sharpes), n_obs)
     print(f"DSR over cost variants: {dsr:.3f}")
     (ROOT / "reports/sensitivity.json").write_text(

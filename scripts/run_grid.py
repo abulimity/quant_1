@@ -33,12 +33,14 @@ def main() -> None:
 
     grid = {k: v for k, v in (sensitivity.parse_grid_spec(s) for s in args.grid)}
 
-    ctx = load_context()
+    ctx = load_context()          # 数据面板只加载一次，所有网格点共用
     close_all, opn_all = ctx["close"], ctx["opn"]
     rows, sharpes, n_obs = [], [], 0
+    # 笛卡尔积逐点：每次只变一个维度（AGENTS.md 阶段目标 1）
     for combo in itertools.product(*grid.values()):
         params = dict(zip(grid.keys(), combo))
         p = config.load_params()
+        # 逐个参数覆写（写后即 schema 校验，非法取值当场报错）
         for k, val in params.items():
             config.set_nested(p, k, str(val))
         weights = build_weights(p, args.start, args.end, context=ctx)
@@ -56,12 +58,17 @@ def main() -> None:
 
     results = pd.DataFrame(rows)
     n = len(rows)
+    # 三个维度的稳健性诊断：
+    #   robustness —— metric > 0 的组合占比（越高越不依赖特定参数）
+    #   cliffs     —— 悬崖检测（参数微调即崩 = 过拟合信号）
+    #   dsr        —— 多重检验校正后的显著性
     out = {
         "grid": grid, "results": rows, "n_trials": n,
         "robustness": sensitivity.robustness_score(results),
         "cliffs": sensitivity.detect_cliffs(results, list(grid)),
         "dsr": overfitting.deflated_sharpe(sharpes, n, n_obs),
     }
+    # 汇总落盘：grid.json（全量）+ sensitivity/<key>.json（单维度）+ sensitivity_summary.json（跨维度）
     (ROOT / "reports" / "grid.json").write_text(
         json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
     sens_dir = ROOT / "reports" / "sensitivity"

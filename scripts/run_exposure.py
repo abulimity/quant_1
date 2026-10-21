@@ -16,11 +16,25 @@ REPORTS = ROOT / "reports"
 
 
 def main() -> None:
+    """集中度与暴露分析，落盘 reports/exposure.json。
+
+    步骤：
+      ① 读回 weights.parquet（目标权重面板）
+      ② 映射展示用资产类别（纳指/黄金/防守/风险）
+      ③ 逐日集中度：HHI = Σw_i²、有效持仓数 N_eff = 1/HHI
+      ④ 逐日资产类暴露：exposure_{c,t} = Σ_{i∈c} w_{i,t}
+
+    输出含义：
+      hhi_mean / effective_n_mean —— 平均集中度（越小越分散）
+      hhi_max / effective_n_min    —— 最极端的单日集中度（风险提示）
+      asset_class_exposure_mean     —— 全期各类资产的平均权重占比
+    """
     p = config.load_params()
     weights = pd.read_parquet(REPORTS / "weights.parquet")
     fb = load_fund_basic()
     cat = univ.classify(fb)
     nasdaq, gold = p["nasdaq_etf"], p["gold_etf"]
+    # 展示用资产类别映射（与 run_attribution.py 保持同一套口径，便于交叉核对）
     classification = {}
     for t in weights.columns:
         if t == nasdaq:
@@ -32,7 +46,9 @@ def main() -> None:
         else:
             classification[t] = "风险"
 
+    # 逐日 HHI 与有效持仓数
     conc = exposure.concentration_series(weights)
+    # 逐日资产类暴露
     cls_expo = exposure.asset_class_exposure(weights, classification)
 
     out = {

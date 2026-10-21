@@ -71,6 +71,7 @@ def main() -> None:
     fb = _retry(lambda: pro.fund_basic(
         market="E", fields="ts_code,name,fund_type,invest_type,list_date,delist_date"))
     fb = fb.dropna(subset=["ts_code"]).drop_duplicates("ts_code")
+    # symbol_id 用连续整数重新编号（bronze 层的内部主键，与 ticker 解耦）
     sym = pd.DataFrame({"symbol_id": range(len(fb)), "ticker": fb["ts_code"].values})
     # 上交所代码以 .SH 结尾，其余按深交所处理
     sym["exchange"] = ["XSHG" if t.endswith(".SH") else "XSHE" for t in sym["ticker"]]
@@ -83,6 +84,7 @@ def main() -> None:
     tick2id = dict(zip(sym["ticker"], sym["symbol_id"]))  # ticker → symbol_id，供日线/复权表回填
     sym.to_parquet(out / "symbols.parquet", index=False)
 
+    # 交易日历（tushare trade_cal，is_open=1 只保留开市日）
     cal = _retry(lambda: pro.trade_cal(
         exchange="SSE", start_date=args.start.replace("-", ""),
         end_date=args.end.replace("-", ""), is_open="1"))
@@ -90,6 +92,7 @@ def main() -> None:
     bars_parts, adj_parts = [], []
     # 逐交易日拉取（tushare 日频接口限速），每 50 日打印进度
     for i, d in enumerate(days):
+        # 日线：vol → volume，并剔除没有收盘价的行（停牌/未上市）
         df = _retry(lambda: pro.fund_daily(trade_date=d))
         if df is not None and not df.empty:
             df = df.dropna(subset=["close"]).copy()
@@ -100,6 +103,7 @@ def main() -> None:
             df = df.rename(columns={"vol": "volume"})
             df["currency"] = "CNY"
             bars_parts.append(df)
+        # 复权因子：与日线同一 symbol_id 体系，后复权计算要用
         af = _retry(lambda: pro.fund_adj(trade_date=d))
         if af is not None and not af.empty:
             af = af.copy()
@@ -109,8 +113,10 @@ def main() -> None:
             adj_parts.append(af[["symbol_id", "ts", "adj_factor"]])
         if (i + 1) % 50 == 0:
             print(f"{i + 1}/{len(days)} days", flush=True)
+        # 每次调用后固定节流，避免触发 tushare 频率限制
         time.sleep(0.12)
 
+    # 汇总落盘 bronze parquet（空结果也保留列结构，保证下游读表不炸）
     bars = pd.concat(bars_parts, ignore_index=True) if bars_parts else pd.DataFrame(
         columns=["symbol_id", "ts", "open", "high", "low", "close", "volume", "currency"])
     bars.to_parquet(out / "bars_daily.parquet", index=False)
@@ -118,6 +124,7 @@ def main() -> None:
         columns=["symbol_id", "ts", "adj_factor"])
     adj.to_parquet(out / "fund_adj.parquet", index=False)
 
+    # 回写 .env 路径覆盖（仅当用户没指定 --out 时，避免覆盖用户的自定义路径）
     if not args.no_env and args.out is None:
         _write_env(out)
         print("已写入 .env 的 ETF_BARS/ADJ/SYMBOLS 路径覆盖")

@@ -33,29 +33,35 @@ def main() -> None:
     args = parser.parse_args()
 
     p = config.load_params()
+    # 逐条应用 --param a.b.c=value 覆写（写后即 schema 校验，非法取值当场报错）
     for kv in args.param:
         k, v = kv.split("=", 1)
         config.set_nested(p, k, v)
     start, end = args.start, args.end
     print(f"etf-rotation v{__version__}")
     print(f"building weights {start}..{end}")
+    # ① 建权重：with_trace=True 同时采集决策轨迹（供 observability 落盘审计）
     build = build_weights(p, start, end, with_trace=True)
     weights = build.weights
     close, opn, _ = load_prices()
     # 把价格面板对齐到权重面板的交易日与标的列，避免回测时列/索引错位
     close = close.reindex(index=weights.index, columns=weights.columns)
     opn = opn.reindex(index=weights.index, columns=weights.columns)
+    # ② 时点对齐：T 日信号 → T+1 生效（权重整体前移一期）
     eff = shift_weights.shift_weights(weights)  # T 日信号，T+1 生效
+    # ③ bt 记账：open=开盘成交+收盘估值（默认），close=收盘成交
     res = run.run(eff, opn, close,
                   cost_bps=p["costs"]["one_side_bps"],
                   cash_rate=p["costs"]["cash_rate_annual"],
                   execution=args.execution,
                   gap_delay_pct=p["execution"]["gap_delay_pct"])
+    # ④ 指标提取：全部取 ffn 统计 + 引擎的换手与费用
     s = metrics.from_stats(res.stats)
     s["turnover"] = float(res.turnover.mean())
     s["total_fees"] = float(res.fees.sum())
     print(json.dumps({k: (round(v, 6) if isinstance(v, float) else v) for k, v in s.items()},
                      ensure_ascii=False, indent=2))
+    # ⑤ 产物落盘：equity / transactions / holdings / weights / benchmark / metrics
     out = ROOT / "reports"
     out.mkdir(exist_ok=True)
     pd.DataFrame({"nav": res.nav, "returns": res.returns, "cash": res.cash}).to_csv(out / "equity.csv")
@@ -73,6 +79,7 @@ def main() -> None:
     diary, tk = observability.build_frames(build.days, build.traces, build.sig, p)
     observability.write(out, diary, tk)
 
+    # ⑥ 内容寻址登记：run_id = f(参数, 代码版本, 数据快照, 执行口径)
     flat = config.flatten_params(p)
     flat["_start"], flat["_end"] = start, end
     data_snap = snapshot.data_snapshot_id()

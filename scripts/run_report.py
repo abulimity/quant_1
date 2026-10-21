@@ -25,9 +25,11 @@ def main() -> None:
     transactions 文件，因此须先跑 run_backtest.py（及可选 run_sensitivity.py）。
     """
     params = config.load_params()
+    # 读取 run_backtest 的产物（equity / metrics / sensitivity / weights / benchmark）
     equity = pd.read_csv(REPORTS / "equity.csv", parse_dates=["ts"]).set_index("ts")
     nav = equity["nav"]
     returns = equity["returns"]
+    # 现金占比 = 现金余额 / 净值（引擎的 cash 是绝对金额，除以 nav 才是权重口径）
     cash_weight = equity["cash"] / equity["nav"] if "cash" in equity.columns else None
     metrics = json.loads((REPORTS / "metrics.json").read_text(encoding="utf-8"))
     sens = json.loads((REPORTS / "sensitivity.json").read_text(encoding="utf-8"))
@@ -50,9 +52,11 @@ def main() -> None:
         else:
             label_map[t] = "风险资产"
 
+    # 市场状态序列（与策略同一套判定，用于子区间表现图）
     start, end = str(nav.index[0].date()), str(nav.index[-1].date())
     regime = market_regime(start, end)
 
+    # 顶部指标卡片
     stats = [
         ("年化收益", f"{metrics['ann_return']:.2%}"),
         ("最大回撤", f"{metrics['max_drawdown']:.2%}"),
@@ -61,9 +65,11 @@ def main() -> None:
         ("年化波动", f"{metrics['ann_vol']:.2%}"),
         ("日均换手", f"{metrics['turnover']:.2%}"),
     ]
+    # 交易明细（以引擎成交记录为唯一依据）
     tx = pd.read_csv(REPORTS / "transactions.csv", parse_dates=["Date"]).set_index(["Date", "Security"])
     t = trades.build_trade_table_from_engine(tx, cost_bps=params["costs"]["one_side_bps"])
 
+    # 八个固定章节：每节 = (标题, 说明文字, plotly 图)
     sections = [
         ("净值曲线对比", "策略 vs 等权持有全池基准 vs 沪深300，均归一化到 1.0 起始。",
          plots.nav_comparison(nav, bench["benchmark"], bench["hs300"])),

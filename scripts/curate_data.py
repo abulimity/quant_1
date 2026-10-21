@@ -37,26 +37,35 @@ def main(snapshot_id: str = "curated-1") -> None:
         currency="CNY",
     )
 
+    # 左连接复权因子（停牌日无因子 → 沿用上一有效值 → 兜底 1.0）
     m = bars.merge(adj, on=["symbol_id", "ts"], how="left")
+    # 只保留在标的表里的 symbol_id（剔除孤儿行情行）
     m = m[m["symbol_id"].isin(set(sym_out["symbol_id"]))]
     m["adj_factor"] = m.groupby("symbol_id")["adj_factor"].ffill().fillna(1.0)
+    # 后复权基准：每个标的最后一期的复权因子
     last = m.groupby("symbol_id")["adj_factor"].transform("last")
+    # close_adj = close × adj_factor / adj_factor_last
     m["close_adj"] = m["close"] * m["adj_factor"] / last
+    # 成交额 = 收盘价 × 成交量 × 100（volume 单位：手，1 手 = 100 股）
     m["amount"] = m["close"] * m["volume"] * 100  # 成交额 = 收盘价 × 成交量 × 100（volume 单位：手）
 
     now = pd.Timestamp.now()
+    # bars_daily：原始行情 + 元信息（币种、可用时间、快照号）
     bars_out = m[["symbol_id", "ts", "open", "high", "low", "close", "volume"]].copy()
     bars_out = bars_out.assign(
         currency="CNY", close_utc=pd.NaT, available_utc=now, source="tushare",
         downloaded_at=now, snapshot_id=snapshot_id, amount=m["amount"],
     )
+    # close_adj：后复权价表（复权方法标记为 fund_adj_forward）
     close_out = m[["symbol_id", "ts", "close_adj", "adj_factor"]].copy()
     close_out = close_out.assign(
         method="fund_adj_forward", available_utc=now,
         source="tushare", snapshot_id=snapshot_id,
     )
+    # 交易日历（优先用 warehouse 已有日历，回退到行情 ts 去重）
     cal = curate.build_trading_calendar(bars)
 
+    # 写库：先注册 pandas 对象为 duckdb 视图，再执行 SQL
     con = duckdb.connect(str(WAREHOUSE))
     con.register("sym_out", sym_out)
     con.register("bars_out", bars_out)
@@ -67,6 +76,7 @@ def main(snapshot_id: str = "curated-1") -> None:
         "INSERT OR REPLACE INTO symbols (symbol_id, ticker, exchange, calendar, currency) "
         "SELECT symbol_id, ticker, exchange, calendar, currency FROM sym_out"
     )
+    # 幂等重跑：同一 snapshot_id 的旧行先删再插，不会出现重复行
     con.execute("DELETE FROM bars_daily WHERE snapshot_id = ?", [snapshot_id])
     con.execute("DELETE FROM close_adj WHERE snapshot_id = ?", [snapshot_id])
     con.execute("INSERT INTO bars_daily SELECT * FROM bars_out")

@@ -23,6 +23,7 @@ def main() -> None:
         raise SystemExit("TUSHARE_TOKEN missing in .env")
     OUT.mkdir(parents=True, exist_ok=True)
     # 前两个是市场状态所需的中证指数，后三个用于基准（沪深300）与 A 股风控（创业板）
+    # 逐标的容错：单个失败只打印、不中断整个脚本
     for code in ["932000.CSI", "000922.CSI", "000001.SH", "399006.SZ", "000300.SH"]:
         try:
             df = ingest.fetch_index_daily(token, code, "2015-01-01", "2026-07-31")
@@ -30,6 +31,7 @@ def main() -> None:
             print(f"{code}: {len(df)} rows")
         except Exception as e:  # noqa: BLE001
             print(f"{code}: FAILED {e}")
+    # ETF 基础信息（名称/类型/上市日期）——分类与 point-in-time 资格的来源
     try:
         fb = ingest.fetch_fund_basic(token)
         fb.to_parquet(OUT / "fund_basic.parquet", index=False)
