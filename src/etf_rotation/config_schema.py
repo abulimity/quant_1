@@ -1,4 +1,14 @@
-"""参数 schema 校验（ml4t-canonical-schema）：类型 + 范围 + 未知键检查。"""
+"""参数 schema 校验（ml4t-canonical-schema）：类型 + 范围 + 未知键检查。
+
+校验三件事：
+  ① 未知键 —— 参数树里出现 schema 未登记的键直接报错（防止拼写错误被静默忽略）
+  ② 类型   —— int / float / bool / list / str 的严格判定
+  ③ 范围   —— 数值型参数的合法区间
+
+为什么需要：敏感性扫描会产生大量「人工拼出来的」参数组合，缺一个类型或范围校验，
+错误会一路传到回测里，表现为莫名其妙的数值异常，排查成本极高。
+在配置入口处挡住，是最便宜的做法。
+"""
 from __future__ import annotations
 
 
@@ -64,7 +74,7 @@ SCHEMA = {
 
 
 def _flatten(node: dict, prefix: str = "") -> dict:
-    """把嵌套参数树平铺为点分键。"""
+    """把嵌套参数树平铺为点分键（如 risk.vol_target_portfolio）。"""
     out = {}
     for k, v in node.items():
         key = f"{prefix}.{k}" if prefix else k
@@ -76,6 +86,15 @@ def _flatten(node: dict, prefix: str = "") -> dict:
 
 
 def _check_type(typ: type, val) -> bool:
+    """严格类型判定。
+
+    规则：
+      int   —— 必须是 int 且不是 bool（Python 里 bool 是 int 的子类，需显式排除）
+      float —— 接受 int/float，但排除 bool
+      bool  —— 必须是 bool
+      list  —— 必须是 list
+      str   —— 必须是 str
+    """
     if typ is int:
         return isinstance(val, int) and not isinstance(val, bool)
     if typ is float:
@@ -90,7 +109,14 @@ def _check_type(typ: type, val) -> bool:
 
 
 def validate_params(params: dict) -> dict:
-    """校验参数树：未知键、类型、范围；失败抛 ConfigError（含字段路径）。"""
+    """校验参数树：未知键、类型、范围；失败抛 ConfigError（含字段路径）。
+
+    对每个叶子参数依次检查：
+      ① key 是否在 SCHEMA 中 → 否则 "unknown param: <path>"
+      ② 值类型是否匹配 → 否则 "<path>: expected <type>, got <type>"
+      ③ 是否越过 min/max  → 否则 "<path>=<val> below/above min/max"
+    校验通过返回原 params（就地校验，不复制）。
+    """
     for key, val in _flatten(params).items():
         if key not in SCHEMA:
             raise ConfigError(f"unknown param: {key}")
