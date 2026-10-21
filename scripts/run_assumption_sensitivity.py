@@ -8,7 +8,7 @@ from etf_rotation.execution import shift_weights
 from etf_rotation import config
 from etf_rotation.backtest import run
 from etf_rotation.data import snapshot
-from etf_rotation.evaluation import metrics, registry
+from etf_rotation.evaluation import metrics, overfitting, registry
 from etf_rotation.pipeline import build_weights, load_context
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -43,23 +43,29 @@ def _run_one(p, start, end, execution, ctx):
                                    execution=execution, signal_version=gsha)
     registry.register_run(
         ROOT / "data" / "warehouse.duckdb", run_id, flat, s, {},
-        data_snapshot_id=data_snap, git_sha=gsha)
-    return s
+        data_snapshot_id=data_snap, git_sha=gsha, execution=execution)
+    return s, int(r.returns.notna().sum())
 
 
 def main() -> None:
     start, end = "2019-01-01", "2026-07-31"
     ctx = load_context()
     out = {}
+    all_sharpes = []
+    n_obs = 0
     for key, values in ASSUMPTIONS.items():
         rows = []
         for v in values:
             p = config.load_params()
             config.set_nested(p, key, str(v))
-            s = _run_one(p, start, end, "open", ctx)
+            s, n_obs = _run_one(p, start, end, "open", ctx)
+            all_sharpes.append(s["sharpe"])
             rows.append({"value": v, **{k: s[k] for k in KEYS}})
         out[key] = rows
         print(json.dumps({key: rows}, ensure_ascii=False, indent=2))
+    # 18 个变体的多重检验校正（DSR 与 Sharpe 扣除上限，观测数 = 回测窗口日收益样本数）
+    out["dsr"] = overfitting.deflated_sharpe(all_sharpes, len(all_sharpes), n_obs)
+    out["sharpe_haircut"] = overfitting.sharpe_haircut(all_sharpes)
     (ROOT / "reports" / "assumption_sensitivity.json").write_text(
         json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
     print("saved reports/assumption_sensitivity.json")
