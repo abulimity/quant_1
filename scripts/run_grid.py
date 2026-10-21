@@ -35,7 +35,7 @@ def main() -> None:
 
     ctx = load_context()
     close_all, opn_all = ctx["close"], ctx["opn"]
-    rows, sharpes = [], []
+    rows, sharpes, n_obs = [], [], 0
     for combo in itertools.product(*grid.values()):
         params = dict(zip(grid.keys(), combo))
         p = config.load_params()
@@ -50,6 +50,7 @@ def main() -> None:
                     cash_rate=p["costs"]["cash_rate_annual"])
         s = metrics.from_stats(r.stats)
         sharpes.append(s["sharpe"])
+        n_obs = int(r.returns.notna().sum())  # 各网格点同区间，观测数一致
         rows.append({**params, "sharpe": s["sharpe"], "max_drawdown": s["max_drawdown"],
                      "ann_return": s["ann_return"], "calmar": s["calmar"]})
 
@@ -59,7 +60,7 @@ def main() -> None:
         "grid": grid, "results": rows, "n_trials": n,
         "robustness": sensitivity.robustness_score(results),
         "cliffs": sensitivity.detect_cliffs(results, list(grid)),
-        "dsr": overfitting.deflated_sharpe(sharpes, n),
+        "dsr": overfitting.deflated_sharpe(sharpes, n, n_obs),
     }
     (ROOT / "reports" / "grid.json").write_text(
         json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")

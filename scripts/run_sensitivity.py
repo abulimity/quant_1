@@ -29,15 +29,17 @@ def main() -> None:
     eff = shift_weights.shift_weights(weights)  # T 日信号，T+1 生效（与基准回测一致）
     rows = []
     sharpes = []
+    n_obs = 0
     for cost in [0, 8, 16, 24]:  # 单边成本 0/8/16/24bp
         r = run.run(eff, opn, close, cost_bps=cost, cash_rate=cash_rate)
         s = metrics.from_stats(r.stats)
         sharpes.append(s["sharpe"])
+        n_obs = int(r.returns.notna().sum())  # 各成本档同区间，观测数一致
         rows.append({"cost_bps": cost, "ann_return": s["ann_return"],
                      "max_drawdown": s["max_drawdown"], "sharpe": s["sharpe"],
                      "calmar": s["calmar"]})
     print(json.dumps(rows, ensure_ascii=False, indent=2))
-    dsr = overfitting.deflated_sharpe(sharpes, len(sharpes))
+    dsr = overfitting.deflated_sharpe(sharpes, len(sharpes), n_obs)
     print(f"DSR over cost variants: {dsr:.3f}")
     (ROOT / "reports/sensitivity.json").write_text(
         json.dumps({"cost_sensitivity": rows, "dsr_cost_variants": dsr},

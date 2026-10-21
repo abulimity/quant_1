@@ -18,8 +18,15 @@ def test_from_stats_maps_bt_stats():
 
 
 def test_dsr_high_for_many_bad_trials():
-    p = overfitting.deflated_sharpe([0.5] * 100, 100)
+    p = overfitting.deflated_sharpe([0.5] * 100, 100, n_obs=1900)
     assert 0 <= p <= 1
+
+
+def test_deflated_sharpe_significant_with_large_n_obs():
+    # 三个候选 Sharpe 均远高于零、观测数足够大时，DSR 应显著（>0.95）。
+    # 修复前 sr_se=sqrt(1/(3-1))=0.707 → 约 0.55；修复后约 1.0。
+    p = overfitting.deflated_sharpe([1.5, 1.5, 1.5], 3, n_obs=2000)
+    assert p > 0.95
 
 
 def test_sharpe_haircut_returns_expected_max():
