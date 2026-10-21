@@ -40,7 +40,7 @@ def _run_one(p: dict, start: str, end: str, execution: str, ctx: dict) -> dict:
                                    execution=execution, signal_version=gsha)
     registry.register_run(
         ROOT / "data" / "warehouse.duckdb", run_id, flat, s, {},
-        data_snapshot_id=data_snap, git_sha=gsha,
+        data_snapshot_id=data_snap, git_sha=gsha, execution=execution,
     )
     return s
 

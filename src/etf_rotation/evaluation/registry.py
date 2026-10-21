@@ -36,10 +36,12 @@ def git_sha() -> str:
 
 def register_run(db_path: Path, run_id: str, params: dict, metrics: dict,
                  artifacts: dict, *, data_snapshot_id: str = "", env_lock_hash: str = "",
-                 git_sha: str = "", report_root: Path = Path("reports")) -> str:
+                 git_sha: str = "", execution: str = "close",
+                 report_root: Path = Path("reports")) -> str:
     """把一次回测的 params/metrics/产物路径写入 duckdb 并落 manifest.json。
 
-    append-only：run_id 已存在时不覆写（幂等），保持首次登记的 metrics 与审计轨迹。
+    append-only：run_id 已存在时不覆写 metrics，仅标记 superseded=True，保持首次登记的
+    审计轨迹。execution 记入 runs 表，便于 close/open 口径可查回。
     """
     con = duckdb.connect(str(db_path))
     con.execute("""
@@ -48,8 +50,12 @@ def register_run(db_path: Path, run_id: str, params: dict, metrics: dict,
             origin VARCHAR NOT NULL, created_at TIMESTAMP NOT NULL,
             data_snapshot_id VARCHAR NOT NULL, env_lock_hash VARCHAR NOT NULL,
             git_sha VARCHAR NOT NULL, params_json VARCHAR NOT NULL, status VARCHAR NOT NULL,
+            execution VARCHAR NOT NULL, superseded BOOLEAN NOT NULL DEFAULT FALSE,
             CHECK (status IN ('ok', 'failed', 'partial')))
     """)
+    # 迁移旧库：补 execution 列与 superseded 标记列（旧 runs 表无这两列）
+    con.execute("ALTER TABLE runs ADD COLUMN IF NOT EXISTS execution VARCHAR DEFAULT 'close'")
+    con.execute("ALTER TABLE runs ADD COLUMN IF NOT EXISTS superseded BOOLEAN DEFAULT FALSE")
     con.execute("""
         CREATE TABLE IF NOT EXISTS run_metrics (
             run_id VARCHAR NOT NULL, metric VARCHAR NOT NULL, value DOUBLE NOT NULL,
@@ -57,16 +63,17 @@ def register_run(db_path: Path, run_id: str, params: dict, metrics: dict,
     """)
     exists = con.execute("SELECT 1 FROM runs WHERE run_id = ?", [run_id]).fetchone()
     if exists:
+        con.execute("UPDATE runs SET superseded = TRUE WHERE run_id = ?", [run_id])
         con.close()
-        return run_id  # 幂等：相同身份重跑不覆写
+        return run_id  # append-only：相同身份重跑不覆写 metrics
     con.execute(
-        "INSERT INTO runs VALUES (?, 'etf-rotation', 'bt', 'run_backtest', ?, ?, ?, ?, ?, 'ok')",
+        "INSERT INTO runs VALUES (?, 'etf-rotation', 'bt', 'run_backtest', ?, ?, ?, ?, ?, 'ok', ?, FALSE)",
         [run_id, datetime.now(timezone.utc).isoformat(), data_snapshot_id, env_lock_hash,
-         git_sha, json.dumps(params, sort_keys=True)],
+         git_sha, json.dumps(params, sort_keys=True), execution],
     )
     for k, v in metrics.items():
         con.execute(
-            "INSERT OR REPLACE INTO run_metrics (run_id, metric, value) VALUES (?, ?, ?)",
+            "INSERT INTO run_metrics (run_id, metric, value) VALUES (?, ?, ?)",
             [run_id, k, float(v)],
         )
     con.close()

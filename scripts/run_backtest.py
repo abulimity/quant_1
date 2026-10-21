@@ -85,7 +85,7 @@ def main() -> None:
         ROOT / "data" / "warehouse.duckdb", run_id, flat, s,
         {"equity": str(out / "equity.csv"), "weights": str(out / "weights.parquet"),
          "benchmark": str(out / "benchmark.csv"), "metrics": str(out / "metrics.json")},
-        data_snapshot_id=data_snap, git_sha=gsha,
+        data_snapshot_id=data_snap, git_sha=gsha, execution=args.execution,
     )
     print(f"registered run {run_id}")
     print(f"saved to {out}")

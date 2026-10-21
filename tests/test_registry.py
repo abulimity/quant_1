@@ -54,6 +54,30 @@ def test_register_run_append_only(tmp_path: Path, monkeypatch):
     con.close()
 
 
+def test_register_run_stores_execution_column(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    db = tmp_path / "r.duckdb"
+    registry.register_run(db, "a", {"x": 1}, {"sharpe": 1.0}, {},
+                          execution="open", report_root=tmp_path / "reports")
+    con = duckdb.connect(str(db))
+    assert con.execute("SELECT execution FROM runs WHERE run_id='a'").fetchone()[0] == "open"
+    con.close()
+
+
+def test_register_run_marks_superseded(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    db = tmp_path / "r.duckdb"
+    report_root = tmp_path / "reports"
+    registry.register_run(db, "abc", {"a": 1}, {"sharpe": 1.2}, {}, report_root=report_root)
+    registry.register_run(db, "abc", {"a": 1}, {"sharpe": 99.0}, {}, report_root=report_root)
+    con = duckdb.connect(str(db))
+    assert con.execute("SELECT count(*) FROM runs WHERE run_id='abc'").fetchone()[0] == 1
+    assert con.execute("SELECT superseded FROM runs WHERE run_id='abc'").fetchone()[0] is True
+    assert con.execute("SELECT value FROM run_metrics WHERE run_id='abc' AND metric='sharpe'",
+                       ).fetchone()[0] == 1.2
+    con.close()
+
+
 def test_hash_files_stable_and_order_independent():
     with tempfile.TemporaryDirectory() as d:
         d = Path(d)
