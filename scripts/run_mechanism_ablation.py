@@ -7,7 +7,8 @@ from pathlib import Path
 from etf_rotation.execution import shift_weights
 from etf_rotation import config
 from etf_rotation.backtest import run
-from etf_rotation.evaluation import metrics
+from etf_rotation.data import snapshot
+from etf_rotation.evaluation import metrics, registry
 from etf_rotation.pipeline import build_weights, load_context
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -24,6 +25,15 @@ def _run(p, start, end, ctx):
                 cash_rate=p["costs"]["cash_rate_annual"], execution="open")
     s = metrics.from_stats(r.stats)
     s["turnover"] = float(r.turnover.mean())
+    flat = config.flatten_params(p)
+    flat["_start"], flat["_end"] = start, end
+    data_snap = snapshot.data_snapshot_id()
+    gsha = registry.git_sha()
+    run_id = registry.run_identity(flat, git_sha=gsha, data_snapshot_id=data_snap,
+                                   execution="open", signal_version=gsha)
+    registry.register_run(
+        ROOT / "data" / "warehouse.duckdb", run_id, flat, s, {},
+        data_snapshot_id=data_snap, git_sha=gsha, execution="open")
     return s
 
 
