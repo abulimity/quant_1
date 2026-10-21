@@ -28,6 +28,8 @@ reports/attribution.json
 reports/ablation.json
 reports/assumption_sensitivity.json
 reports/data_quality.json
+reports/exposure.json
+reports/oos_check.json
 reports/signals/
 
 # OS
