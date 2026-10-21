@@ -82,10 +82,12 @@ def rolling_perf(returns: pd.Series, windows=(63, 252)) -> go.Figure:
         vertical_spacing=0.06, subplot_titles=("滚动年化收益", "滚动夏普"),
     )
     for w, color in zip(windows, (BLUE, GREEN)):
+        # 滚动年化收益：ann_w = mean(r, w)·252
         ann = r.rolling(w).mean() * 252
         fig.add_trace(go.Scatter(x=ann.index, y=ann.values, name=f"{w} 日收益",
                                  line=dict(color=color, width=1.2)), row=1, col=1)
     for w, color in zip(windows, (BLUE, GREEN)):
+        # 滚动夏普：SR_w = mean(r, w)/std(r, w)·√252
         sh = r.rolling(w).mean() / r.rolling(w).std() * np.sqrt(252)
         fig.add_trace(go.Scatter(x=sh.index, y=sh.values, name=f"{w} 日夏普",
                                  line=dict(color=color, width=1.2)), row=2, col=1)
@@ -100,7 +102,9 @@ def subperiod_performance(returns: pd.Series, regime: pd.Series) -> go.Figure:
     """分年度累计收益 + 按牛/熊/震荡分组的累计收益。"""
     r = returns.dropna()
     g = regime.reindex(r.index).fillna("range")
+    # 年度累计收益：R_y = Π(1+r) − 1（几何复合，与净值口径一致）
     yr = r.groupby(r.index.year).apply(lambda s: (1 + s).prod() - 1)
+    # 市场状态累计收益：同样按 Π(1+r)−1 复合
     by_reg = r.groupby(g).apply(lambda s: (1 + s).prod() - 1)
     reg_cn = {"bull": "牛市", "bear": "熊市", "range": "震荡"}
     fig = make_subplots(
@@ -128,6 +132,7 @@ def subperiod_performance(returns: pd.Series, regime: pd.Series) -> go.Figure:
 def monthly_heatmap(returns: pd.Series) -> go.Figure:
     """年份 × 月份累计收益热力图，绿为正、红为负。"""
     r = returns.dropna()
+    # 月度收益：R_{y,m} = Π(1+r) − 1，再 unstack 成「年 × 月」矩阵
     m = r.groupby([r.index.year, r.index.month]).apply(
         lambda s: (1 + s).prod() - 1
     ).unstack()
@@ -147,14 +152,17 @@ def holdings_distribution(weights: pd.DataFrame, label_map: dict,
                           cash: pd.Series | None = None) -> go.Figure:
     """持仓结构：上图按资产类别堆叠，下图按前 10 大持仓堆叠；现金用引擎 cash/nav（缺省回退 1−总仓位）。"""
     w = weights.copy()
+    # 现金腿：优先用引擎的 cash/nav，缺省回退 1 − Σw
     cash_leg = cash.reindex(w.index) if cash is not None else 1.0 - w.sum(axis=1)
     order = ["风险资产", "纳指", "黄金", "防守", "现金"]
+    # 资产类别暴露：exposure_{c,t} = Σ_{i∈c} w_{i,t}
     by_cat = pd.DataFrame(index=w.index)
     for c in order[:-1]:
         cols = [t for t in w.columns if label_map.get(t, "风险资产") == c]
         by_cat[c] = w[cols].sum(axis=1) if cols else 0.0
     by_cat["现金"] = cash_leg
 
+    # 前 10 大持仓：按全期平均权重排序取前 10，其余合并为「其他」
     meanw = w.mean().sort_values(ascending=False)
     top = list(meanw.head(10).index)
     top_df = w[top].copy()
@@ -186,6 +194,7 @@ def return_distribution(returns: pd.Series) -> go.Figure:
                                name="日收益", marker_color="rgba(44,111,187,0.55)"))
     mu, sd = r.mean(), r.std()
     xs = np.linspace(float(r.min()), float(r.max()), 200)
+    # 正态拟合密度：pdf(x) = exp(−(x−μ)²/(2σ²)) / (σ·√(2π))
     pdf = np.exp(-0.5 * ((xs - mu) / sd) ** 2) / (sd * np.sqrt(2 * np.pi))
     fig.add_trace(go.Scatter(x=xs, y=pdf, name="正态拟合", line=dict(color=ORANGE, width=1.5)))
     fig.update_layout(title="日收益分布", bargap=0.02)
@@ -223,7 +232,11 @@ def market_state_timeline(diary: pd.DataFrame, nav: pd.Series) -> go.Figure:
 
 
 def risk_budget_stack(diary: pd.DataFrame) -> go.Figure:
-    """风险（含防守）/纳指/黄金/现金逐日堆叠面积图。"""
+    """风险（含防守）/纳指/黄金/现金逐日堆叠面积图。
+
+    风险腿 = total_weight − nasdaq_weight − gold_weight（总仓位扣掉两条跨资产腿，
+    剩下的即 A 股风险仓 + 防守仓），并 clip 到非负以防浮点误差出现负面积。
+    """
     risk = (diary["total_weight"] - diary["nasdaq_weight"] - diary["gold_weight"]).clip(lower=0.0)
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=diary.index, y=risk, name="风险（含防守）", stackgroup="a",
@@ -240,7 +253,11 @@ def risk_budget_stack(diary: pd.DataFrame) -> go.Figure:
 
 
 def signal_trends(tk: pd.DataFrame, ticker: str) -> go.Figure:
-    """单标的 5 行子图：m21/m60、score、zbias、close vs llt80、weight。"""
+    """单标的 5 行子图：m21/m60、score、zbias、close vs llt80、weight。
+
+    第 4 行把收盘价与 80 日 LLT 画在一起：两线之比即 overheat_ratio，
+    该比值 ≥ 1+overheat_pct（默认 20%）即触发单 ETF 过热退出。
+    """
     sub = tk.xs(ticker, level="ticker")
     fig = make_subplots(
         rows=5, cols=1, shared_xaxes=True, vertical_spacing=0.03,
@@ -265,7 +282,13 @@ def signal_trends(tk: pd.DataFrame, ticker: str) -> go.Figure:
 
 
 def trade_triggers(diary: pd.DataFrame, trades: pd.DataFrame) -> go.Figure:
-    """交易触发事件标记：换仓（hysteresis_held=False）、过热退出、波动上限缩放。"""
+    """交易触发事件标记：换仓（hysteresis_held=False）、过热退出、波动上限缩放。
+
+    三个事件条件（互不排斥，同一天可同时出现多个标记）：
+      换仓        —— 整组迟滞未维持（hysteresis_held = False）
+      过热退出    —— 当天有标的被单 ETF 过热规则清零（n_overheat_exits > 0）
+      波动上限缩放—— 组合波动触顶（vol_cap_scale < 1.0）
+    """
     fig = go.Figure()
     switch = diary[~diary["hysteresis_held"].astype(bool)]
     overheat = diary[diary["n_overheat_exits"] > 0]
