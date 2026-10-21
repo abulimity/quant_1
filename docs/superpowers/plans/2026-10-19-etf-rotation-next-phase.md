@@ -345,3 +345,39 @@ Part 0（Task 1→2→3→4→5）为基础设施，须先做且不改数值；�
 - [ ] 归因报告把约 6 点差距归到五桶并量化；假设/机制敏感性结果进 registry 可回查。
 - [ ] 阶段三/四全部收口或显式裁决；版本号 v1.1.0 并打 tag。
 - [ ] `.env` token 未泄露；`data/` 未入库；`reports/` 生成物处理与既有约定一致。
+
+---
+
+## 执行结果（2026-10-21，Native / executing-plans）
+
+> 本计划已完整执行：27 个任务全部完成，最终整分支评审通过并修复 3 个 Important，
+> 全量 `pytest` **93 passed**，版本 **v1.1.0** 已打 tag。提交范围 `0b901a7..9a628b3`（约 31 个语义化 commit）。
+
+### 完成情况
+
+- **Part 0 基础设施**（Task 1–5）：run_id 含「参数+代码+数据+执行+信号版本」、append-only registry、参数 schema 校验、H1–H10 参数化 + `docs/assumptions.md`、Hydra multirun 网格、bronze 数据快照哈希。
+- **Part 1 前置决策**（Task 6–8）：默认执行切 open（T+1 开盘成交）、候选参数写回默认、重立基线 **9.61% / -15.79% / Sharpe 0.88 / Calmar 0.61**。
+- **Part 2 可观测化**（Task 9–13）：动量收敛、决策轨迹采集、`decision_diary`/`ticker_signals` 落盘、4 个信号/决策图、报告「信号与决策」章节。
+- **Part 3 差距归因**（Task 14–19）：资产类别/区间归因、机制开关对照、H1/H3/H4/H5/H7 假设敏感性网格、集中度/暴露分析、数据质量复核，结论见 `reports/差距归因.md`。
+- **Part 4 收尾**（Task 20–27）：删除 4 个未接线遗留实现、`weights.shift` 抽公共、现金口径修正、硬编码参数接线/标注、文档维护 + v1.1.0。
+
+### 归因关键结论
+
+- **五相位是策略命根子**：关闭后收益 9.61%→6.64%、换手 5.0%→8.3%（`reports/ablation.json`）。
+- **两个能逼近研报的假设调整**：H1 指数衰减权重（→10.49%、回撤 -12.37%）、H7 纳指退出阈值 -0.05（→11.30%）；H3/H4/H5 默认已近最优（`reports/assumption_sensitivity.json`）。
+- **不可精确归因**：数据源/标的池（无 Wind）为有界残差；年化 20.74% 大概率不可逼近，本项目交付「拆到五桶 + 量化」而非追平。
+
+### 重要裁决（Rulings，详见已删除的 SDD 账本 / git 历史）
+
+- 引擎保留 bt、不建 worktree、`main` 原地开发（`data/`/`.env` 无法进 worktree）。
+- 切换 open 默认暴露并修复**真实 bug**：OpenRebalance 前导纯现金日致净值全 NaN（`run.py` 归一化 `ffill().bfill()`）。
+- 观测层/基础设施「不改数值」逐任务过 `IDENTICAL`；慢测（全量信号预计算 ~5.5 分钟）用 `-k` 排除做快速回归。
+- 评审后修 3 个 Important：① param 覆盖补 schema 校验 ② `market_regime` 读参数阈值（旧硬编码 0.35）③ 观测层 nasdaq/gold 权重统一为平滑后口径。
+
+### 评审遗留 Minor（deferred，未修）
+
+1. H5 `momentum_weight` 使 range 市 score 数值减半（权重不变，仅 `ticker_signals` 的 score 量级）。
+2. `market_state_timeline` 图的 bear 阈值线硬编码 -0.30（实际 -0.35）。
+3. `env_lock_hash` 从未填充（不影响 run_id）。
+4. `data_snapshot_id` 哈希 bronze，但回测读 `warehouse.duckdb`（同步不变式未强制）。
+5. `trade_triggers` 的「换仓」标记含 warmup/无持仓日（`held=False` 语义过宽）。
