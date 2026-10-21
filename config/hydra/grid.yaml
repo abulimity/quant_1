@@ -6,4 +6,4 @@ param_key: "dedupe.corr_threshold"
 param_value: 0.80
 start: "2019-01-01"
 end: "2026-07-31"
-execution: close
+execution: open

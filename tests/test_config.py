@@ -83,4 +83,4 @@ def test_hydra_grid_config_loads():
     with initialize(version_base=None, config_path="../config/hydra"):
         cfg = compose(config_name="grid")
     assert cfg["param_key"] == "dedupe.corr_threshold"
-    assert cfg["execution"] == "close"
+    assert cfg["execution"] == "open"
