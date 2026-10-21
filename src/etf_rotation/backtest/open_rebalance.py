@@ -41,6 +41,13 @@ class OpenRebalance(bt.algos.Algo):
     """
 
     def __init__(self, gap_delay_pct=0.01):
+        """缓存跳空阈值并初始化顺延队列。
+
+        参数
+        ----
+        gap_delay_pct : float
+            买入跳空顺延阈值（默认 0.01，即开盘价较前收盘高开 ≥1% 就顺延）。
+        """
         super().__init__()
         self.gap_delay_pct = gap_delay_pct
         self._pending = {}  # ticker -> 顺延买入的目标权重

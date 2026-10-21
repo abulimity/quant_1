@@ -56,6 +56,11 @@ def _flat_commission(cost_bps: float):
     公式：cost = |q| × p × bps / 1e4（q = 成交股数，p = 成交价）
     """
     def commission(q, p):
+        """比例佣金回调：cost = |q| × p × bps / 1e4。
+
+        q：成交股数（有符号，买入正 / 卖出负），取绝对值保证买卖同向计费；
+        p：成交价（bt 从价格面板里取当日执行价，open 口径下即开盘价）。
+        """
         return abs(q) * p * cost_bps / 10000.0
 
     return commission
@@ -74,6 +79,13 @@ class _CashInterest(bt.algos.Algo):
     """
 
     def __init__(self, cash_rate: float):
+        """把年化 cash_rate 折算成日利率并缓存，供每日 __call__ 复用。
+
+        参数
+        ----
+        cash_rate : float
+            年化现金利率（config/params.yaml 的 costs.cash_rate_annual）。
+        """
         super().__init__()
         # 日利率：daily = (1+r)^(1/252) − 1
         self.daily = (1 + cash_rate) ** (1 / 252) - 1
