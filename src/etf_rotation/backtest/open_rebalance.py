@@ -5,6 +5,16 @@ bt 标准 `Rebalance` 是「单价格模型」（成交与估值共用 bar 价�
 自定义成交价旁路（前置条件是 setup 时传了 `bidoffer`，哪怕全 0）。本模块复刻
 `Rebalance` 的「权重差 → 数量 → 佣金闭环」，仅把成交价换成开盘价，NAV/现金/
 费用/成交明细/统计仍全部由 bt 产出，不另起炉灶重写记账引擎。
+
+成交价与估值的口径分离：
+  成交价 = open_price[T+1]   —— 信号在 T 日收盘生成，T+1 开盘撮合
+  估值价 = close_price[T+1]  —— 持仓当日按收盘价盯市
+因此 T+1 当日的收益 = (close/open − 1) 计入 T+1，这正是「T 日信号、T+1 成交」的
+无前视实现。
+
+两条顺延（pending）规则：
+  ① 跳空顺延：买入开盘涨幅 ≥ gap_delay_pct（默认 1%）→ 当日不追价，顺延次日再试
+  ② 停牌跳过：当日无开盘价（停牌/无成交）→ 买入增量顺延，卖出照常
 """
 from __future__ import annotations
 
@@ -14,7 +24,21 @@ import bt
 
 
 class OpenRebalance(bt.algos.Algo):
-    """按 T+1 开盘价成交、收盘价估值；买入高开顺延、停牌跳过。"""
+    """按 T+1 开盘价成交、收盘价估值；买入高开顺延、停牌跳过。
+
+    参数
+    ----
+    gap_delay_pct : float
+        买入跳空顺延阈值。判据：op / close_{T} − 1 ≥ gap_delay_pct 时放弃当日成交，
+        把该标的的目标权重挂入 `_pending`，等下一个交易日再试（避免在高开时追价，
+        把「开盘价成交」这一研报口径扭曲成「开盘跳空溢价成交」）。
+
+    内部状态
+    --------
+    _pending : dict[ticker -> float]
+        待成交的目标权重。顺延标的先于新目标成交；pending 合计超过 1 时按比例
+        归一化，其余目标再按剩余预算等比缩放，保证权重和不超过 1（不引入杠杆）。
+    """
 
     def __init__(self, gap_delay_pct=0.01):
         super().__init__()
@@ -22,6 +46,17 @@ class OpenRebalance(bt.algos.Algo):
         self._pending = {}  # ticker -> 顺延买入的目标权重
 
     def __call__(self, target):
+        """执行当日调仓：平仓 → 合并 pending → 按开盘价成交 → 记账。
+
+        流程
+        ----
+        1) 归一化 pending（合计 > 1 时按比例缩放到 1），并入有效目标 eff；
+        2) 非 pending 部分按剩余预算 remaining = max(0, 1 − p_total) 等比缩放：
+           scale = min(1, remaining / non_total)；
+        3) 清空不在 eff 内的持仓（目标已归零的标的先卖出）；
+        4) 逐标的成交：停牌（open 价 NaN）或买入跳超阈值 → 顺延；
+           否则按 `delta = w − 当前权重` 计算成交金额。
+        """
         weights = target.temp.get("weights")
         if weights is None:
             return True
@@ -43,6 +78,7 @@ class OpenRebalance(bt.algos.Algo):
         non_pending = [t for t in eff if t not in pending_now]
         non_total = sum(eff[t] for t in non_pending)
         if non_total > 0:
+            # 剩余预算分配：scale = min(1, (1 − p_total) / non_total)
             remaining = max(0.0, 1.0 - p_total)
             scale = min(1.0, remaining / non_total)
             for t in non_pending:
@@ -71,8 +107,10 @@ class OpenRebalance(bt.algos.Algo):
                 if w > c.weight:
                     self._pending[ticker] = w
                 continue
+            # 权重差 → 成交金额：delta = 目标权重 − 当前权重
             delta = w - c.weight
             if delta > 0 and not is_pending:
+                # 跳空顺延判据：op / close_{T−1} − 1 ≥ gap_delay_pct → 今日不追价
                 pc = close_px.shift(1).loc[now, ticker]
                 if pd.notna(pc) and op / pc - 1 >= self.gap_delay_pct:
                     self._pending[ticker] = w
@@ -85,7 +123,17 @@ class OpenRebalance(bt.algos.Algo):
         return True
 
     def _transact_at(self, target, child, amount, price):
-        """复刻 `SecurityBase.allocate` 的「权重差→数量→佣金闭环」，仅成交价换成开盘价。"""
+        """复刻 `SecurityBase.allocate` 的「权重差→数量→佣金闭环」，仅成交价换成开盘价。
+
+        两步公式：
+          ① 名义数量：q = amount/(price·multiplier)
+             —— multiplier 为合约乘子（ETF = 1），amount 为含佣金的现金流出预算
+          ② 佣金闭环：迭代逼近「完整现金流出 = amount」
+             —— 佣金按比例收取，outlay(q) > amount，故需下调 q
+             迭代式：q ← q − (outlay(q) − amount)/(price·multiplier)
+             收敛判据：|outlay(q) − amount| ≤ TOL（bt.core.TOL）
+        卖出到清仓（amount + 当前市值 = 0）时直接取 q = −当前持仓股数。
+        """
         if bt.core.is_zero(amount):
             return
         if child._needupdate or child.now != target.now:
@@ -101,7 +149,7 @@ class OpenRebalance(bt.algos.Algo):
             q = amount / (price * child.multiplier)
         if bt.core.is_zero(q) or np.isnan(q):
             return
-        # 比例佣金闭环：与 allocate 相同地迭代逼近「完整现金流出 == amount」
+        # 比例佣金闭环：与 allocate 相同地迭代逼近「完整现金流出 = amount」
         if q != -child._position:
             full_outlay, _, _, _ = child.outlay(q, p=price)
             i = 0
