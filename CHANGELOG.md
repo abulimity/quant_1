@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased · docs
+
+- 全仓代码补充中文注释：`src/etf_rotation/**`（39 个文件）+ `scripts/**`（15 个文件），tests 不动。
+- 注释深度：解释「为什么」+ 决策链路导航 + **代码块级粒度** + 每个计算块列出**显式计算公式**（60 条公式逐条落到注释里）。
+- 补齐 21 处缺失的函数/类 docstring；`scripts/` 全部 `main()` 均有说明（用法、输出产物、口径注意事项）。
+- 关键防错说明已固化到注释里：`run_oos_check.py`「全窗口建权再切片」（禁止子区间独立 `build_weights`）、`run_attribution.py` / `run_exposure.py` 的四分类映射、`shift_weights` 的 T 日信号 T+1 生效纪律。
+- 顺带修正 `docs/代码审阅手册.md` 的过期描述：基线 commit 与单测数（32 → 97 passed）、`calendar.py` 日历主路径已改读 `warehouse.trading_calendar`、point-in-time 过滤已移入 `pipeline._daily_target`、`momentum_panel` 已迁至 `signals/trend.py`、默认参数（bull 0.30 / bear −0.35 / corr 0.85）、回测引擎已改 `WeighTarget` + `OpenRebalance`、`open_price` 不再是死参数、`metrics.from_stats` 不含 VaR/CVaR、`trades.csv` 已改为以引擎成交为依据、§8.1–§8.5 标注当前修复状态。
+- **仅注释与 docstring 改动**：零逻辑、零数值变化。验收用剥 docstring 后的 AST dump 与改动前逐文件比对完全一致，基准回测指标与改动前 IDENTICAL。
+
 ## v1.1.1 (2026-10-21)
 
 - 修复 `deflated_sharpe` 标准误用「候选数 N」当「观测数 T」的 bug（旧 DSR ~0.54 为公式伪影；修正后成本变体 DSR 0.985、18 变体 DSR 0.9934）。
