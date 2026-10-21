@@ -1,0 +1,94 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "基准回测工作流程",
+    "locale": "zh-CN",
+    "output": ".archify/archify-quant1-diagrams-20261019-165550/workflow-backtest.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/abulimity/quant_1.git",
+      "provider": "github",
+      "revision": "125d408a59aed22f0bf557c0e67af0651bc5916b"
+    }
+  },
+  "lanes": [
+    { "id": "cli", "label": "入口与配置" },
+    { "id": "data", "label": "数据与信号" },
+    { "id": "weight", "label": "目标权重" },
+    { "id": "engine", "label": "执行与记账" },
+    { "id": "output", "label": "指标 · 登记 · 观测 · 产物" },
+    { "id": "exception", "label": "异常分支", "variant": "exception" }
+  ],
+  "mainPath": ["args", "params", "prices", "weights", "eff", "run", "nav", "metrics", "registry", "save"],
+  "nodes": [
+    { "id": "args", "lane": "cli", "col": 0, "type": "external", "label": "cli 参数", "sublabel": "start / end / --param", "tag": "默认 open 口径", "width": 130,
+      "sources": [{ "path": "scripts/run_backtest.py", "line": 27, "end_line": 33 }] },
+    { "id": "params", "lane": "cli", "col": 1, "type": "backend", "label": "config", "sublabel": "load_params + schema 校验", "width": 130,
+      "sources": [{ "path": "src/etf_rotation/config.py", "line": 17, "end_line": 22 }, { "path": "src/etf_rotation/config_schema.py", "line": 92, "end_line": 104 }] },
+    { "id": "prices", "lane": "data", "col": 2, "type": "database", "label": "价格与交易日", "sublabel": "load_context / trading_days", "width": 130,
+      "sources": [{ "path": "src/etf_rotation/pipeline.py", "line": 50, "end_line": 92 }, { "path": "src/etf_rotation/data/calendar.py", "line": 21, "end_line": 33 }] },
+    { "id": "weights", "lane": "weight", "col": 2, "type": "backend", "label": "build_weights", "sublabel": "目标权重面板（T 日）", "tag": "with_trace · mechanisms 全 on", "width": 130,
+      "sources": [{ "path": "src/etf_rotation/pipeline.py", "line": 443, "end_line": 512 }] },
+    { "id": "signals", "lane": "data", "col": 3, "type": "backend", "label": "信号预计算", "sublabel": "动量 / LLT / ZBias", "tag": "按信号参数缓存", "width": 130,
+      "sources": [{ "path": "src/etf_rotation/pipeline.py", "line": 176, "end_line": 236 }] },
+    { "id": "daily", "lane": "weight", "col": 4, "type": "backend", "label": "逐日目标权重", "sublabel": "_daily_target", "width": 130,
+      "sources": [{ "path": "src/etf_rotation/pipeline.py", "line": 261, "end_line": 368 }] },
+    { "id": "phases", "lane": "weight", "col": 5, "yOffset": -150, "type": "backend", "label": "五相位 · 迟滞 · 波动上限", "sublabel": "相位合并 + 整组迟滞 + 34% 上限", "width": 180,
+      "sources": [{ "path": "src/etf_rotation/pipeline.py", "line": 479, "end_line": 495 }] },
+    { "id": "loop", "lane": "weight", "col": 5, "yOffset": 150, "type": "external", "label": "每日循环", "sublabel": "for d in days", "tag": "循环结束才产出权重", "width": 130,
+      "sources": [{ "path": "src/etf_rotation/pipeline.py", "line": 475, "end_line": 508 }] },
+    { "id": "eff", "lane": "engine", "col": 5, "yOffset": 150, "type": "backend", "label": "shift_weights", "sublabel": "T 日信号 → T+1 生效", "tag": "shift(1) + fillna(0)", "width": 130,
+      "sources": [{ "path": "src/etf_rotation/execution/shift_weights.py", "line": 7, "end_line": 9 }] },
+    { "id": "run", "lane": "engine", "col": 5, "yOffset": 300, "type": "cloud", "label": "bt.run", "sublabel": "OpenRebalance / Rebalance", "tag": "佣金 + 现金计息", "width": 130,
+      "sources": [{ "path": "src/etf_rotation/backtest/run.py", "line": 57, "end_line": 108 }] },
+    { "id": "nav", "lane": "output", "col": 5, "yOffset": 450, "type": "database", "label": "净值与统计", "sublabel": "nav / turnover / positions", "width": 130,
+      "sources": [{ "path": "src/etf_rotation/backtest/run.py", "line": 108, "end_line": 134 }] },
+    { "id": "metrics", "lane": "output", "col": 5, "yOffset": 600, "type": "backend", "label": "metrics", "sublabel": "from_stats → 报告口径", "width": 130,
+      "sources": [{ "path": "src/etf_rotation/evaluation/metrics.py", "line": 7, "end_line": 16 }] },
+    { "id": "registry", "lane": "output", "col": 5, "yOffset": 750, "type": "backend", "label": "registry 登记", "sublabel": "run_identity + 数据快照", "tag": "append-only", "width": 130,
+      "sources": [{ "path": "src/etf_rotation/evaluation/registry.py", "line": 13, "end_line": 25 }, { "path": "src/etf_rotation/data/snapshot.py", "line": 25, "end_line": 35 }] },
+    { "id": "obs", "lane": "weight", "col": 2, "yOffset": 220, "type": "backend", "label": "observability 旁路", "sublabel": "decision_diary + ticker_signals", "tag": "只观测不参与决策", "width": 170,
+      "sources": [{ "path": "src/etf_rotation/evaluation/observability.py", "line": 60, "end_line": 114 }] },
+    { "id": "save", "lane": "output", "col": 5, "yOffset": 1050, "type": "database", "label": "落盘产物", "sublabel": "reports/ + duckdb + manifest", "width": 130,
+      "sources": [{ "path": "scripts/run_backtest.py", "line": 59, "end_line": 91 }] },
+    { "id": "unknown_exec", "lane": "exception", "col": 4, "type": "security", "label": "未知名执行口径", "sublabel": "ValueError 中止", "width": 130,
+      "sources": [{ "path": "src/etf_rotation/backtest/run.py", "line": 88, "end_line": 92 }] }
+  ],
+  "edges": [
+    { "from": "args", "to": "params", "label": "参数覆盖", "variant": "emphasis", "role": "main" },
+    { "from": "params", "to": "prices", "label": "build_weights", "variant": "emphasis", "role": "main" },
+    { "from": "prices", "to": "weights", "label": "读价格", "role": "main" },
+    { "from": "weights", "to": "signals", "label": "首次构建信号", "variant": "dashed", "role": "branch" },
+    { "from": "signals", "to": "daily", "label": "当日信号", "role": "main" },
+    { "from": "daily", "to": "phases", "label": "五相位合并", "variant": "dashed", "role": "branch" },
+    { "from": "phases", "to": "loop", "label": "候选权重", "role": "branch" },
+    { "from": "loop", "to": "signals", "label": "下一交易日 d", "variant": "dashed", "role": "return" },
+    { "from": "weights", "to": "eff", "label": "weights.shift(1)", "variant": "emphasis", "role": "main" },
+    { "from": "eff", "to": "run", "label": "默认开盘成交", "variant": "emphasis", "role": "main" },
+    { "from": "run", "to": "nav", "role": "main" },
+    { "from": "nav", "to": "metrics", "label": "res.stats", "role": "main" },
+    { "from": "metrics", "to": "registry", "label": "登记 run", "role": "main" },
+    { "from": "registry", "to": "save", "role": "main" },
+    { "from": "weights", "to": "obs", "label": "traces 旁路", "variant": "dashed", "role": "branch" },
+    { "from": "obs", "to": "save", "label": "落盘决策快照", "variant": "dashed", "role": "branch" },
+    { "from": "eff", "to": "unknown_exec", "label": "其它执行值", "variant": "security", "role": "error" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "无前视对齐", "items": [
+      "信号在全历史（2015 年起）上滚动计算，循环按日期 d 用 .loc[d] 取值",
+      "shift_weights 把目标权重整体 shift(1)（T 日信号、T+1 生效），缺日补 0",
+      "组合波动量只用「上一日最终权重 × 当日收益」构造，不含未来信息"
+    ] },
+    { "dot": "emerald", "title": "引擎口径与机制", "items": [
+      "默认 open：T+1 开盘成交 + 跳空顺延 + 停牌跳过；close 回退 T+1 收盘近似",
+      "mechanisms 开关（phases/hysteresis/reversal/overheat/vol_cap）默认全 on",
+      "bt 负责现金、持仓、换手与净值记账；成本为单边 bps 佣金，现金按年化计息"
+    ] },
+    { "dot": "rose", "title": "登记与观测", "items": [
+      "registry 用 run_identity(参数+代码+数据快照+执行口径+信号版本) 登记，append-only",
+      "observability 用 with_trace 的 traces 旁路落盘 decision_diary / ticker_signals",
+      "产物：equity/weights/transactions/benchmark/metrics + runs/{run_id}/manifest.json"
+    ] }
+  ]
+}

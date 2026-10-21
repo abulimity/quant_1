@@ -1,0 +1,84 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "参数敏感性测试工作流程",
+    "locale": "zh-CN",
+    "output": ".archify/archify-quant1-diagrams-20261019-165550/workflow-sensitivity.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/abulimity/quant_1.git",
+      "provider": "github",
+      "revision": "125d408a59aed22f0bf557c0e67af0651bc5916b"
+    }
+  },
+  "lanes": [
+    { "id": "cli", "label": "实验入口" },
+    { "id": "prep", "label": "网格与参数准备" },
+    { "id": "loop", "label": "网格循环" },
+    { "id": "eval", "label": "稳健性统计与校正" },
+    { "id": "output", "label": "登记与产出" },
+    { "id": "exception", "label": "异常分支", "variant": "exception" }
+  ],
+  "mainPath": ["entry", "grid", "params", "rebuild", "bt", "collect", "verify", "dsr", "oos", "registry", "write", "roadmap"],
+  "nodes": [
+    { "id": "entry", "lane": "cli", "col": 0, "type": "external", "label": "实验入口脚本", "sublabel": "7 类敏感性实验", "tag": "成本/网格/Hydra/消融/假设/OOS/热力图", "width": 200,
+      "sources": [{ "path": "scripts/run_sensitivity.py", "line": 18, "end_line": 29 }, { "path": "scripts/run_grid_hydra.py", "line": 24, "end_line": 45 }, { "path": "scripts/run_mechanism_ablation.py", "line": 15, "end_line": 37 }] },
+    { "id": "grid", "lane": "prep", "col": 1, "type": "backend", "label": "网格 / 变体展开", "sublabel": "parse_grid_spec → product", "width": 150,
+      "sources": [{ "path": "src/etf_rotation/evaluation/sensitivity.py", "line": 8, "end_line": 22 }] },
+    { "id": "params", "lane": "prep", "col": 2, "type": "backend", "label": "逐组覆盖参数", "sublabel": "load_params + set_nested", "tag": "schema 校验 · 机制开关", "width": 150,
+      "sources": [{ "path": "src/etf_rotation/config.py", "line": 46, "end_line": 53 }, { "path": "scripts/run_mechanism_ablation.py", "line": 46, "end_line": 49 }] },
+    { "id": "rebuild", "lane": "loop", "col": 3, "type": "backend", "label": "重建 / 复用权重", "sublabel": "build_weights 或读 weights.parquet", "width": 150,
+      "sources": [{ "path": "scripts/run_grid.py", "line": 43, "end_line": 45 }, { "path": "scripts/run_sensitivity.py", "line": 24, "end_line": 29 }] },
+    { "id": "bt", "lane": "loop", "col": 4, "type": "cloud", "label": "shift_weights + bt.run", "sublabel": "T+1 生效 → 记账", "tag": "open 口径 · 扫成本档", "width": 150,
+      "sources": [{ "path": "src/etf_rotation/execution/shift_weights.py", "line": 7, "end_line": 9 }, { "path": "scripts/run_grid_hydra.py", "line": 29, "end_line": 31 }] },
+    { "id": "collect", "lane": "eval", "col": 5, "type": "database", "label": "结果表", "sublabel": "sharpe / max_drawdown / calmar", "width": 150,
+      "sources": [{ "path": "scripts/run_grid.py", "line": 50, "end_line": 55 }] },
+    { "id": "verify", "lane": "eval", "col": 5, "yOffset": 150, "type": "backend", "label": "稳健性 · 悬崖 · 热力图", "sublabel": "稳健性分数 / 悬崖 / 热力图", "width": 170,
+      "sources": [{ "path": "src/etf_rotation/evaluation/sensitivity.py", "line": 32, "end_line": 53 }] },
+    { "id": "dsr", "lane": "eval", "col": 5, "yOffset": 300, "type": "security", "label": "DSR 多重检验校正", "sublabel": "deflated_sharpe + Sharpe 扣减", "tag": "n_trials 计试验次数", "width": 170,
+      "sources": [{ "path": "src/etf_rotation/evaluation/overfitting.py", "line": 6, "end_line": 34 }] },
+    { "id": "oos", "lane": "eval", "col": 5, "yOffset": 450, "type": "security", "label": "样本外子区间", "sublabel": "2019–2023 vs 2024–2026", "tag": "全窗口建权再切片", "width": 170,
+      "sources": [{ "path": "scripts/run_oos_check.py", "line": 1, "end_line": 9 }, { "path": "scripts/run_oos_check.py", "line": 53, "end_line": 58 }] },
+    { "id": "registry", "lane": "output", "col": 5, "yOffset": 600, "type": "backend", "label": "registry 登记", "sublabel": "run_identity + 数据快照", "tag": "append-only", "width": 170,
+      "sources": [{ "path": "src/etf_rotation/evaluation/registry.py", "line": 13, "end_line": 25 }, { "path": "src/etf_rotation/data/snapshot.py", "line": 25, "end_line": 35 }] },
+    { "id": "write", "lane": "output", "col": 5, "yOffset": 750, "type": "database", "label": "落盘结果", "sublabel": "grid / sensitivity / ablation", "width": 170,
+      "sources": [{ "path": "scripts/run_grid.py", "line": 63, "end_line": 75 }, { "path": "scripts/run_mechanism_ablation.py", "line": 51, "end_line": 53 }] },
+    { "id": "roadmap", "lane": "output", "col": 5, "yOffset": 900, "type": "external", "label": "结论与下一轮", "sublabel": "调参记录 → 候选参数", "width": 170,
+      "sources": [{ "path": "scripts/run_assumption_sensitivity.py", "line": 67, "end_line": 71 }] },
+    { "id": "err", "lane": "exception", "col": 1, "type": "security", "label": "入参校验失败", "sublabel": "热力图维度≠2 / 缺权重文件", "width": 150,
+      "sources": [{ "path": "scripts/run_heatmap.py", "line": 29, "end_line": 29 }, { "path": "scripts/run_sensitivity.py", "line": 24, "end_line": 24 }] }
+  ],
+  "edges": [
+    { "from": "entry", "to": "grid", "label": "网格规格", "variant": "emphasis", "role": "main" },
+    { "from": "grid", "to": "params", "role": "main" },
+    { "from": "params", "to": "rebuild", "role": "main" },
+    { "from": "rebuild", "to": "bt", "label": "目标权重", "role": "main" },
+    { "from": "bt", "to": "collect", "label": "追加一行", "role": "main" },
+    { "from": "collect", "to": "params", "label": "下一组参数", "variant": "dashed", "role": "return" },
+    { "from": "collect", "to": "verify", "label": "全网格结果", "role": "main" },
+    { "from": "verify", "to": "dsr", "label": "校正后", "variant": "security", "role": "main" },
+    { "from": "dsr", "to": "oos", "label": "分区间复核", "role": "main" },
+    { "from": "oos", "to": "registry", "label": "登记变体", "role": "main" },
+    { "from": "registry", "to": "write", "role": "main" },
+    { "from": "write", "to": "roadmap", "role": "main" },
+    { "from": "entry", "to": "err", "label": "入参非法", "variant": "security", "role": "error" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "七个入口的分工", "items": [
+      "run_sensitivity（成本 0/8/16/24bp，复用权重）、run_grid（单参数网格，重建权重）",
+      "run_grid_hydra（Hydra multirun）、run_mechanism_ablation（逐项关机制看边际）",
+      "run_assumption_sensitivity（H1/H3/H4/H5/H7）、run_oos_check（子区间）、run_heatmap（二维）"
+    ] },
+    { "dot": "emerald", "title": "判读口径", "items": [
+      "稳健性分数 = 网格中 Sharpe > 0 占比；悬崖检测看相邻跳变是否超 2 倍标准差",
+      "DSR 用试验次数 + 观测数做多重检验校正，>0.95 才算显著",
+      "OOS 在全窗口建权（保证 warmup/相位/迟滞状态不重置）再按子区间切片"
+    ] },
+    { "dot": "rose", "title": "方法与纪律", "items": [
+      "一次只动一个维度；机制消融逐项关闭 phases/hysteresis/reversal/overheat/vol_cap",
+      "信号缓存只按信号参数键复用，其余参数变化真实重算",
+      "所有变体经 registry 登记（参数+代码+数据快照+执行口径+信号版本）"
+    ] }
+  ]
+}

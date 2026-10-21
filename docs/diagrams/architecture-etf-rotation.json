@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "多资产 ETF 轮动策略：模块架构",
+    "locale": "zh-CN",
+    "output": ".archify/archify-quant1-diagrams-20261019-165550/architecture-etf-rotation.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/abulimity/quant_1.git",
+      "provider": "github",
+      "revision": "125d408a59aed22f0bf557c0e67af0651bc5916b"
+    }
+  },
+  "components": [
+    { "id": "params", "type": "external", "label": "params.yaml", "sublabel": "默认参数 + H1–H10 + 机制开关", "icon": "none", "pos": [40, 60], "size": [150, 62],
+      "sources": [{ "path": "config/params.yaml", "line": 1, "end_line": 63 }] },
+    { "id": "env", "type": "external", "label": ".env", "sublabel": "TUSHARE_TOKEN", "icon": "none", "pos": [220, 60], "size": [150, 62],
+      "sources": [{ "path": "src/etf_rotation/config.py", "line": 12, "end_line": 14 }] },
+
+    { "id": "config", "type": "backend", "label": "config.py", "sublabel": "加载 + 点分覆盖", "icon": "none", "pos": [40, 180], "size": [150, 62],
+      "sources": [{ "path": "src/etf_rotation/config.py", "line": 17, "end_line": 53 }] },
+    { "id": "config_schema", "type": "backend", "label": "config_schema.py", "sublabel": "类型 / 范围 / 未知键校验", "pos": [220, 180], "size": [190, 62],
+      "sources": [{ "path": "src/etf_rotation/config_schema.py", "line": 92, "end_line": 104 }] },
+
+    { "id": "run_backtest", "type": "frontend", "label": "run_backtest.py", "sublabel": "基准回测入口", "tag": "默认 open 口径", "pos": [40, 300], "size": [150, 74],
+      "sources": [{ "path": "scripts/run_backtest.py", "line": 21, "end_line": 52 }] },
+    { "id": "pipeline", "type": "backend", "label": "pipeline.py", "sublabel": "build_weights 目标权重面板", "tag": "mechanisms 机制开关", "pos": [280, 300], "size": [150, 74],
+      "sources": [{ "path": "src/etf_rotation/pipeline.py", "line": 443, "end_line": 512 }] },
+    { "id": "shift_weights", "type": "backend", "label": "shift_weights.py", "sublabel": "T 日信号 → T+1 生效", "icon": "clock", "pos": [520, 300], "size": [140, 74],
+      "sources": [{ "path": "src/etf_rotation/execution/shift_weights.py", "line": 7, "end_line": 9 }] },
+    { "id": "bt_engine", "type": "cloud", "label": "bt 引擎", "sublabel": "run.py + OpenRebalance", "tag": "open/close · 佣金+计息", "pos": [760, 300], "size": [150, 74],
+      "sources": [{ "path": "src/etf_rotation/backtest/run.py", "line": 57, "end_line": 108 }] },
+    { "id": "evaluation", "type": "backend", "label": "evaluation", "sublabel": "metrics / sensitivity / overfitting", "tag": "plots / trades", "pos": [1000, 300], "size": [150, 74],
+      "sources": [{ "path": "src/etf_rotation/evaluation/metrics.py", "line": 7, "end_line": 16 }, { "path": "src/etf_rotation/evaluation/sensitivity.py", "line": 32, "end_line": 53 }, { "path": "src/etf_rotation/evaluation/overfitting.py", "line": 6, "end_line": 34 }] },
+
+    { "id": "registry", "type": "backend", "label": "registry.py", "sublabel": "内容寻址 run_identity", "tag": "append-only · superseded", "pos": [1000, 440], "size": [150, 74],
+      "sources": [{ "path": "src/etf_rotation/evaluation/registry.py", "line": 13, "end_line": 25 }] },
+    { "id": "reports", "type": "database", "label": "reports/", "sublabel": "equity · weights · metrics", "icon": "database", "pos": [1240, 440], "size": [170, 74],
+      "sources": [{ "path": "scripts/run_backtest.py", "line": 59, "end_line": 70 }] },
+
+    { "id": "observability", "type": "backend", "label": "observability.py", "sublabel": "decision_diary + ticker_signals", "tag": "旁路观测", "pos": [40, 600], "size": [190, 62],
+      "sources": [{ "path": "src/etf_rotation/evaluation/observability.py", "line": 60, "end_line": 106 }] },
+    { "id": "signals", "type": "backend", "label": "signals", "sublabel": "trend / market_state / reversal", "tag": "动量 · LLT · ZBias", "pos": [250, 600], "size": [190, 62],
+      "sources": [{ "path": "src/etf_rotation/signals/trend.py", "line": 8, "end_line": 29 }, { "path": "src/etf_rotation/signals/market_state.py", "line": 29, "end_line": 44 }, { "path": "src/etf_rotation/signals/reversal.py", "line": 8, "end_line": 20 }] },
+    { "id": "portfolio", "type": "backend", "label": "portfolio", "sublabel": "multi_asset / risk_layers / dedupe", "tag": "hrp / defensive", "pos": [460, 600], "size": [190, 62],
+      "sources": [{ "path": "src/etf_rotation/portfolio/multi_asset.py", "line": 4, "end_line": 18 }, { "path": "src/etf_rotation/portfolio/risk_layers.py", "line": 4, "end_line": 20 }, { "path": "src/etf_rotation/portfolio/dedupe.py", "line": 4, "end_line": 12 }] },
+    { "id": "data", "type": "backend", "label": "data", "sublabel": "calendar / universe", "tag": "point-in-time 可投池", "pos": [670, 600], "size": [190, 62],
+      "sources": [{ "path": "src/etf_rotation/data/calendar.py", "line": 21, "end_line": 33 }, { "path": "src/etf_rotation/data/universe.py", "line": 11, "end_line": 32 }] },
+    { "id": "attribution", "type": "backend", "label": "attribution.py", "sublabel": "资产类别 / 区间归因", "pos": [880, 600], "size": [190, 62],
+      "sources": [{ "path": "src/etf_rotation/evaluation/attribution.py", "line": 7, "end_line": 23 }] },
+    { "id": "exposure", "type": "backend", "label": "exposure.py", "sublabel": "HHI / 有效持仓数 / 暴露", "pos": [1090, 600], "size": [190, 62],
+      "sources": [{ "path": "src/etf_rotation/evaluation/exposure.py", "line": 7, "end_line": 27 }] },
+    { "id": "snapshot", "type": "backend", "label": "data/snapshot.py", "sublabel": "数据快照哈希", "tag": "bronze sha256", "pos": [980, 760], "size": [190, 62],
+      "sources": [{ "path": "src/etf_rotation/data/snapshot.py", "line": 25, "end_line": 35 }] },
+
+    { "id": "bronze", "type": "database", "label": "data/bronze", "sublabel": "parquet 快照（原始）", "icon": "database", "pos": [460, 760], "size": [220, 62],
+      "sources": [{ "path": "src/etf_rotation/data/paths.py", "line": 16, "end_line": 20 }] },
+    { "id": "warehouse", "type": "database", "label": "warehouse.duckdb", "sublabel": "close_adj / bars_daily / 日历", "icon": "database", "pos": [730, 760], "size": [220, 62],
+      "sources": [{ "path": "src/etf_rotation/data/paths.py", "line": 21, "end_line": 21 }, { "path": "src/etf_rotation/pipeline.py", "line": 71, "end_line": 92 }] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "src/etf_rotation", "wraps": ["config", "config_schema", "pipeline", "shift_weights", "bt_engine", "evaluation", "registry", "observability", "signals", "portfolio", "data", "attribution", "exposure", "snapshot"] }
+  ],
+  "connections": [
+    { "id": "params-config", "from": "params", "to": "config", "label": "YAML" },
+    { "id": "env-config", "from": "env", "to": "config", "label": "token" },
+    { "id": "config-schema", "from": "config", "to": "config_schema", "label": "校验" },
+    { "id": "config-runbt", "from": "config", "to": "run_backtest", "label": "load_params" },
+    { "id": "runbt-pipeline", "from": "run_backtest", "to": "pipeline", "label": "build_weights", "variant": "emphasis" },
+    { "id": "pipeline-shift", "from": "pipeline", "to": "shift_weights", "label": "目标权重", "variant": "emphasis" },
+    { "id": "shift-bt", "from": "shift_weights", "to": "bt_engine", "label": "shift(1)", "variant": "emphasis" },
+    { "id": "bt-eval", "from": "bt_engine", "to": "evaluation", "label": "res.stats", "variant": "emphasis" },
+    { "id": "eval-registry", "from": "evaluation", "to": "registry", "label": "metrics", "variant": "emphasis" },
+    { "id": "registry-reports", "from": "registry", "to": "reports", "label": "登记 + 写产物" },
+    { "id": "runbt-observability", "from": "run_backtest", "to": "observability", "label": "决策轨迹旁路", "variant": "dashed" },
+    { "id": "pipeline-signals", "from": "pipeline", "to": "signals", "label": "动量 / LLT / ZBias" },
+    { "id": "pipeline-portfolio", "from": "pipeline", "to": "portfolio", "label": "配权" },
+    { "id": "pipeline-data", "from": "pipeline", "to": "data", "label": "可投池 / 日历" },
+    { "id": "registry-snapshot", "from": "registry", "to": "snapshot", "label": "数据快照", "variant": "dashed" },
+    { "id": "eval-attribution", "from": "evaluation", "to": "attribution", "label": "读 weights 归因", "variant": "dashed" },
+    { "id": "registry-exposure", "from": "registry", "to": "exposure", "label": "读 weights 暴露", "variant": "dashed" },
+    { "id": "data-warehouse", "from": "data", "to": "warehouse", "label": "读价格 / 日历" },
+    { "id": "bronze-warehouse", "from": "bronze", "to": "warehouse", "label": "派生", "variant": "dashed" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "主回测链", "items": [
+      "run_backtest.py 依次 load_params → build_weights → shift_weights(shift(1)) → bt.run → from_stats → registry 登记 → 写产物",
+      "默认执行口径 open（T+1 开盘成交 + 跳空顺延），--execution close 回退收盘",
+      "pipeline 的 mechanisms 开关（phases/hysteresis/reversal/overheat/vol_cap）默认全 on，供机制消融"
+    ] },
+    { "dot": "emerald", "title": "基础设施与可复现", "items": [
+      "config_schema 对参数做类型/范围/未知键校验；snapshot 对 bronze 输入做内容寻址哈希",
+      "registry 用 run_identity(参数+代码+数据快照+执行口径+信号版本) 登记，append-only + superseded",
+      "observability 旁路落盘 decision_diary / ticker_signals（只观测不参与决策）"
+    ] },
+    { "dot": "rose", "title": "分析与实验入口", "items": [
+      "attribution（资产类别/区间归因）、exposure（HHI/有效持仓数）为独立分析，读 weights.parquet",
+      "网格/消融/假设敏感性/OOS 脚本复用同一 config→pipeline→shift_weights→bt→registry 链",
+      "warehouse.duckdb 由 bronze 派生；bronze 由 fetch/curate 脚本填充（git 忽略）"
+    ] }
+  ]
+}
