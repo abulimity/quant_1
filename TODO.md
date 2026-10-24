@@ -7,7 +7,7 @@
 ## 后续待办（v1.1.1 整改后遗留）
 
 - [ ] 修复基准序列滞后一天：`compute_benchmark` 对 hs300 收益做了两次 `shift`（策略净值已是 T+1 口径）。证据：lag 0 相关 −0.02、lag −1 相关 0.512；修正后 corr 0.51 / beta 0.31 / IR 0.15 / 月胜率 51.6%。修复前所有日频相对指标（相关/beta/TE/IR/捕获率）不可用；修复后把 lag 扫描自检写进报告「可信度」层。
-- [ ] 回测报告 v2 落地：按 `docs/superpowers/specs/2026-10-24-etf-rotation-report-content-spec.md`（C0–C11、74 项图表清单、P0/P1/P2）重构 `run_report.py` / `plots.py`；等权全池基准本期从报告移除；前置依赖 N1（基准修正）、N5（pipeline trace 扩展）、N7（单笔买卖配对）。
+- [ ] 回测报告 v2 落地：按 `docs/superpowers/specs/2026-10-24-etf-rotation-report-content-spec.md`（C0–C11、74 项图表清单、P0/P1/P2）重构 `run_report.py` / `plots.py`；派生数据按 `docs/superpowers/plans/2026-10-24-etf-rotation-report-derived-data.md`（N1–N13、11 个任务）执行；等权全池基准本期从报告移除。
 - [ ] H1-exp（指数时间权重）与 H7 纳指退出阈值 -0.05 是否采纳入默认：2026-10-21 审查复核后（`reports/assumption_sensitivity.json` 含 DSR/haircut，`reports/oos_check.json` 含子区间），由用户裁决。若采纳属「改变数值」，须走 Part 1 流程（逐任务 commit + 重立基线）。
 - [ ] `env_lock_hash` 从未填充（不影响 run_id，见 registry）。
 - [ ] `data_snapshot_id` 哈希 bronze，但回测读 `warehouse.duckdb`（同步不变式未强制）。
