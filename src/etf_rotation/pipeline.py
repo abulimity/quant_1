@@ -29,6 +29,7 @@ from etf_rotation.data import calendar, universe as univ
 from etf_rotation.data.paths import ADJ, BARS, FETCHED, IDX, SYMBOLS, WAREHOUSE
 from etf_rotation.portfolio import defensive as defn
 from etf_rotation.portfolio import dedupe, hrp, multi_asset, risk_layers
+from etf_rotation.signals import cache
 from etf_rotation.signals import market_state as ms
 from etf_rotation.signals import trend
 
@@ -37,24 +38,9 @@ from etf_rotation.signals import trend
 # 只有这些参数会改变信号面板本身（动量/波动/市场状态/反转/标的）。
 # 其余参数（成本、去重阈值、HRP 窗口、风控目标等）在下游消费信号，不触发重算，
 # 因此调这些参数时可直接复用缓存结果，不必重跑全历史预计算。
-_SIGNAL_KEYS = (
-    "trend.windows",
-    "trend.weighting",
-    "market_state.alpha",
-    "market_state.slope_window",
-    "market_state.bull_threshold",
-    "market_state.bear_threshold",
-    "market_state.slope_up",
-    "market_state.slope_down",
-    "risk.vol_window",
-    "risk.llm80_alpha",
-    "reversal.ema_span",
-    "reversal.z_window",
-    "reversal.zbias_threshold",
-    "reversal.repair_lookback",
-    "nasdaq_etf",
-    "gold_etf",
-)
+# 单一来源：清单本身放在 signals/cache.py（磁盘 signal_id 与进程内 _SIGNAL_CACHE
+# 必须用同一份键，否则加一个信号参数时两处会漂移）。这里只保留别名兼容旧引用。
+_SIGNAL_KEYS = cache.SIGNAL_KEYS
 # 进程级缓存：数据上下文只加载一次，信号面板按 _SIGNAL_KEYS 组合缓存
 _CONTEXT_CACHE: dict | None = None
 _SIGNAL_CACHE: dict = {}

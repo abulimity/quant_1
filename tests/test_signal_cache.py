@@ -139,6 +139,17 @@ def test_cache_root_env_override(monkeypatch, tmp_path):
     assert cache.cache_root() == tmp_path
 
 
+def test_signal_keys_single_source():
+    """键清单只有一个来源：进程内 _SIGNAL_CACHE 与磁盘 signal_id 用同一份键。"""
+    from etf_rotation import config, pipeline
+
+    assert pipeline._SIGNAL_KEYS is cache.SIGNAL_KEYS
+    assert tuple(cache.signal_cache_key(config.load_params())) == cache.SIGNAL_KEYS
+    # pipeline 侧返回的是「按同一份键取到的值序列」，长度必须与键数一致
+    assert len(pipeline.signal_cache_key(config.load_params())) == len(cache.SIGNAL_KEYS)
+    assert len(cache.SIGNAL_KEYS) == 16
+
+
 def test_precompute_hit_skips_heavy_panels(monkeypatch, tmp_path):
     """命中缓存：不跑 momentum_panel/llt，仍返回完整 dict。"""
     from etf_rotation import pipeline

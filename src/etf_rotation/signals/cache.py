@@ -48,7 +48,9 @@ from etf_rotation.data import paths
 
 # 参与信号的参数（点号路径，兼容嵌套 dict 与 config.flatten_params 的扁平 dict）。
 # 只列 _precompute_signals 真正读取的量：组合/去重/成本类参数一律不进来。
-_SIGNAL_KEYS = (
+# 单一来源：`pipeline._SIGNAL_KEYS` 是它的别名——磁盘 signal_id 与进程内
+# `_SIGNAL_CACHE` 必须用同一份键，新增信号参数只改这里一处。
+SIGNAL_KEYS = (
     "trend.windows",
     "trend.weighting",
     "reversal.ema_span",
@@ -66,6 +68,9 @@ _SIGNAL_KEYS = (
     "nasdaq_etf",
     "gold_etf",
 )
+
+# 旧名保留为只读别名（内部引用统一走公开常量，避免第二份清单）
+_SIGNAL_KEYS = SIGNAL_KEYS
 
 # 信号代码：这些文件的字节内容一变，缓存必须失效。
 _SIGNAL_SOURCES = (
@@ -107,7 +112,7 @@ def _get(params: dict, dotted: str):
 
 def signal_cache_key(params: dict) -> dict:
     """抽出参与信号计算的参数子集（键固定，缺失补 None，保证哈希结构稳定）。"""
-    return {key: _get(params, key) for key in _SIGNAL_KEYS}
+    return {key: _get(params, key) for key in SIGNAL_KEYS}
 
 
 def signal_code_hash() -> str:
