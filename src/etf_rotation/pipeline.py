@@ -213,7 +213,49 @@ def _precompute_signals(close, opn, amt, indices, params, cat) -> dict:
     关键设计：所有信号都在「全历史」（2015 起）上计算，而不是回测窗口内。
     这样 2019-01-02 首个交易日就已有 21/60 日动量、170 日反转 z-score 的 warmup，
     不必牺牲前 170 天。回测循环再按日期 d 取当日值（见 build_weights 顶部说明）。
+
+    内容寻址缓存（signal_id）：命中就直接读回六个面板与标量表，只重算
+    close/ret/n_days/avg20 四个派生字段（几行 rolling，成本可忽略），跳过动量/
+    LLT/反转这些全历史重计算；未命中则照旧计算并原子落盘（见 signals/cache.py）。
+    `ETF_SIGNAL_CACHE=off` 关闭读取（强制重算，用于纯计算计时），仍写盘供热跑。
     """
+    import os
+    import sys
+
+    from etf_rotation.data import snapshot
+    from etf_rotation.signals import cache
+
+    # 风险池与防守池（逐日 point-in-time 资格）：命中缓存时也要重建，保持返回键不变
+    risk_tickers = [t for t, c in cat.items() if c == "risk" and t in close.columns]
+    def_tickers = [t for t, c in cat.items() if c in ("bond", "money") and t in close.columns]
+
+    # 身份先行：即使本次不用缓存（off），也把 sid 算出来，算完照常落盘
+    snapshot_id = snapshot.data_snapshot_id()
+    sid = cache.signal_id(params, snapshot_id)
+    # 价格面板指纹：防止合成数据/换数据目录撞了同一个 sid 后互相填喂
+    digest = cache.price_hash(close)
+    # 写盘闸门：测试进程默认不写跨 worktree 共享的缓存（显式指定目录时例外）
+    write_cache = bool(os.environ.get("ETF_SIGNAL_CACHE_DIR")) or "pytest" not in sys.modules
+    if os.environ.get("ETF_SIGNAL_CACHE", "on").strip().lower() != "off":
+        hit = cache.load(sid, cache.cache_root(), price_hash=digest)
+        if hit is not None:
+            scalars = hit["scalars"]
+            return dict(
+                m21=hit["m21"], m60=hit["m60"],
+                ret=close.pct_change(fill_method=None),   # 派生：由收盘价廉价重算
+                vol60=hit["vol60"],
+                n_days=close.notna().cumsum(),            # 派生
+                avg20=amt.rolling(20).mean(),             # 派生
+                regime=scalars["regime"], comp=scalars["comp"],
+                nas_mom=scalars["nas_mom"], gold_mom=scalars["gold_mom"],
+                nas_vol=scalars["nas_vol"], gold_vol=scalars["gold_vol"],
+                cyb_vol=scalars["cyb_vol"], cyb_below=scalars["cyb_below"],
+                cyb_drop=scalars["cyb_drop"],
+                llt80=hit["llt80"], close=close, zbias=hit["zbias"],
+                rev_active=hit["rev_active"],
+                risk_tickers=risk_tickers, def_tickers=def_tickers, cat=cat,
+            )
+
     logp = np.log(close)
     w_short, w_long = params["trend"]["windows"]
     weighting = params["trend"]["weighting"]
@@ -260,9 +302,7 @@ def _precompute_signals(close, opn, amt, indices, params, cat) -> dict:
     cyb_below = cyb < cyb_llt                               # 今日收盘是否在 LLT₈₀ 之下
     cyb_drop = cyb_llt.pct_change(20, fill_method=None)     # LLT 自身 20 日变化率
 
-    # 风险池与防守池（逐日 point-in-time 资格）
-    risk_tickers = [t for t, c in cat.items() if c == "risk" and t in close.columns]
-    def_tickers = [t for t, c in cat.items() if c in ("bond", "money") and t in close.columns]
+    # 风险池与防守池（逐日 point-in-time 资格）已在函数顶部重建
     # 每只风险 ETF 的 80 日 LLT（列式 apply，用于单 ETF 过热退出）
     llt80 = close[risk_tickers].apply(lambda s: ms.llt(s, params["risk"]["llm80_alpha"]))
     # 反转面板：14 日 EMA 偏离经 170 日滚动 z-score（均值/标准差 .shift(1) 防前视）
@@ -276,6 +316,20 @@ def _precompute_signals(close, opn, amt, indices, params, cat) -> dict:
     # 反转激活：明显超跌（ZBias ≤ θ）且负向偏离较 N 日前收窄（正在修复）
     rev_active = (zbias <= params["reversal"]["zbias_threshold"]) & (
         zbias > zbias.shift(params["reversal"]["repair_lookback"]))
+
+    # 落盘（未命中时）：面板按字段存 parquet，标量/文本列合成一张表；原子发布
+    if write_cache:
+        cache.save(
+            {"m21": m21, "m60": m60, "vol60": vol60, "zbias": zbias,
+             "llt80": llt80, "rev_active": rev_active},
+            pd.DataFrame({
+                "comp": comp, "regime": regime, "nas_mom": nas_mom, "gold_mom": gold_mom,
+                "nas_vol": nas_vol, "gold_vol": gold_vol, "cyb_vol": cyb_vol,
+                "cyb_below": cyb_below, "cyb_drop": cyb_drop,
+            }),
+            sid, cache.cache_root(),
+            {"params": params, "data_snapshot_id": snapshot_id, "price_hash": digest},
+        )
 
     return dict(
         m21=m21, m60=m60, ret=ret, vol60=vol60, n_days=n_days, avg20=avg20,
