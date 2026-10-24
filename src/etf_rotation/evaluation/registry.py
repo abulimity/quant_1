@@ -285,3 +285,147 @@ def content_hash(meta: dict, metrics: dict, artifact_hashes: dict[str, str]) -> 
 def utc_now() -> str:
     """当前 UTC 时间（ISO 8601），供 created_at / updated_at 使用。"""
     return datetime.now(timezone.utc).isoformat()
+
+
+# ── family / trial 登记（主计划 Task 18）──────────────────────────────────
+# 一次「调参族」= 同一份网格 spec + 同一批基准参数 + 同一窗口/口径/代码/数据。
+# 每个成员 run 写自己的 `members/{run_id}.json`，没有任何共享汇总文件：
+# Hydra multirun / 多会话并行时不会互相覆盖；family 级汇总（summary.json）
+# 只能由单进程 collect_runs 生成。
+
+def _json_safe(value):
+    """递归转成可 `json.dumps(..., allow_nan=False)` 的结构（NaN/Inf → None）。"""
+    if isinstance(value, dict):
+        return {str(k): _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, bool) or value is None or isinstance(value, str):
+        return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, numbers.Integral):
+        return int(value)
+    if isinstance(value, (datetime, date, pd.Timestamp)):
+        return value.isoformat()
+    if hasattr(value, "item") and not isinstance(value, (str, bytes)):
+        return _json_safe(value.item())
+    return str(value)
+
+
+def family_id(kind: str, spec: dict, base_params: dict, start, end, execution: str,
+              git_sha: str, data_snapshot_id: str, campaign_id: str = "") -> str:
+    """调参族身份：`sha256(json({kind, spec, base_params, start, end, execution,
+    git_sha, data_snapshot_id, campaign_id}, sort_keys=True))[:12]`。
+
+    `sort_keys=True` 让 dict 键序不同也得到同一个 id（内容寻址）；`spec` 传原始
+    网格（参数名 → 候选值），`base_params` 传未参与网格的基准参数——两者都在
+    身份里，避免「同名网格、不同底参」的两批结果被当成一族。
+    """
+    payload = {
+        "kind": kind,
+        "spec": _json_safe(spec),
+        "base_params": _json_safe(base_params),
+        "start": _json_safe(start),
+        "end": _json_safe(end),
+        "execution": execution,
+        "git_sha": git_sha,
+        "data_snapshot_id": data_snapshot_id,
+        "campaign_id": campaign_id,
+    }
+    blob = json.dumps(payload, sort_keys=True, ensure_ascii=False,
+                      allow_nan=False).encode("utf-8")
+    return hashlib.sha256(blob).hexdigest()[:12]
+
+
+def _write_json_atomic(path: Path, payload: dict) -> None:
+    """原子写小 JSON：先写同目录 `.tmp-{pid}-{rand}`，再 `os.replace` 覆盖。
+
+    成员文件按 run_id 命名，同一路径不会被两个 run 写；但 collect_runs 可能并发
+    重建 summary，`os.replace` 保证读者永远看到完整 JSON（不会读到半截文件）。
+    """
+    import os
+    import uuid
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.tmp-{os.getpid()}-{uuid.uuid4().hex[:8]}")
+    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2, allow_nan=False),
+                   encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def write_family_member(root: Path, fid: str, run_id: str, variant: dict,
+                        campaign_id: str = "", family: dict | None = None) -> None:
+    """登记一个成员 run：写 `{root}/{fid}/members/{run_id}.json`（一个成员一个文件）。
+
+    `family`（可选）用于首次写入时补 `family.json` 的 kind/spec：成员文件只描述
+    「哪个 run、什么变体」，族的定义（kind/spec/窗口/口径）放在 family.json。
+    已存在的 family.json 只补缺失键、不覆盖已有值（多进程并行时先写者为准）。
+    """
+    out = Path(root) / fid
+    row = {
+        "family_id": fid,
+        "run_id": run_id,
+        "variant": _json_safe(variant),
+        "campaign_id": campaign_id,
+        "created_at": utc_now(),
+    }
+    _write_json_atomic(out / "members" / f"{run_id}.json", row)
+
+    meta_path = out / "family.json"
+    if family is not None:
+        meta = {}
+        if meta_path.exists():
+            try:
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            except Exception:
+                meta = {}
+        meta.setdefault("family_id", fid)
+        for key in ("kind", "spec", "start", "end", "execution", "git_sha",
+                    "data_snapshot_id", "campaign_id"):
+            value = family.get(key)
+            if value is not None and key not in meta:
+                meta[key] = _json_safe(value)
+        meta.setdefault("campaign_id", campaign_id)
+        meta.setdefault("created_at", utc_now())
+        _write_json_atomic(meta_path, meta)
+
+
+def load_family(root: Path, fid: str) -> dict:
+    """读回一个族的定义与成员：`{fid, kind, spec, campaign_id, members[], n_trials}`。
+
+    - 成员按 run_id 排序（确定性输出，不受文件系统枚举顺序影响）；
+    - 目录/成员不存在时返回空族（`n_trials=0`），不抛错——首次运行时必须可用；
+    - 跳过 `.` 开头的临时文件，避免读到写了一半的 JSON。
+    """
+    out = Path(root) / fid
+    meta = {}
+    if (out / "family.json").exists():
+        try:
+            meta = json.loads((out / "family.json").read_text(encoding="utf-8"))
+        except Exception:
+            meta = {}
+
+    members = []
+    members_dir = out / "members"
+    if members_dir.exists():
+        for path in sorted(members_dir.glob("*.json")):
+            if path.name.startswith("."):
+                continue
+            try:
+                row = json.loads(path.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            row.setdefault("run_id", path.stem)
+            row.setdefault("family_id", fid)
+            members.append(row)
+    members.sort(key=lambda r: str(r.get("run_id")))
+
+    return {
+        "family_id": fid,
+        "kind": meta.get("kind"),
+        "spec": meta.get("spec", {}),
+        "campaign_id": meta.get("campaign_id", ""),
+        "members": members,
+        "n_trials": len(members),
+        "created_at": meta.get("created_at"),
+    }

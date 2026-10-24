@@ -11,6 +11,34 @@ import numpy as np
 from scipy import stats
 
 
+def campaign_trials(root, campaign_id: str) -> int:
+    """统计某个 campaign 下已登记的 trial（成员 run）总数，跨 family 累加。
+
+    为什么要累计：DSR 的 `n_trials` 必须是「本轮真实尝试过的参数组合总数」，
+    漏算一个 family 就会低估选择偏差（DSR 偏高）。这里按成员文件里的
+    `campaign_id` 精确匹配，而不是按「目录存在」计数——同一 campaign 可以把
+    网格、敏感性、消融的多个 family 串起来。
+    实现：`{root}/*/members/*.json` 逐文件读 `campaign_id`，跳过 `.` 开头的临时文件。
+    """
+    import json
+    from pathlib import Path
+
+    root = Path(root)
+    if not root.exists():
+        return 0
+    total = 0
+    for path in root.glob("*/members/*.json"):
+        if path.name.startswith("."):
+            continue
+        try:
+            row = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if row.get("campaign_id", "") == campaign_id:
+            total += 1
+    return total
+
+
 def deflated_sharpe(sharpes, n_trials: int, n_obs: int) -> float:
     """给定一组候选年化 Sharpe、试验总数与观测数（回测窗口内的日收益样本数），
     返回「观测最优高于零假设期望最优」的概率；>0.95 视为显著。
