@@ -4,7 +4,7 @@ from __future__ import annotations
 import duckdb
 import pandas as pd
 
-from etf_rotation.data import curate
+from etf_rotation.data import curate, snapshot
 from etf_rotation.data.paths import ADJ, BARS, SYMBOLS, WAREHOUSE
 
 
@@ -82,11 +82,14 @@ def main(snapshot_id: str = "curated-1") -> None:
     con.execute("INSERT INTO bars_daily SELECT * FROM bars_out")
     con.execute("INSERT INTO close_adj SELECT * FROM close_out")
     con.execute("INSERT OR REPLACE INTO trading_calendar SELECT * FROM cal")
+    # 写库结束后固化指纹清单：之后 verify_warehouse 用它判断库有没有被换过
+    manifest = snapshot.write_warehouse_manifest(con)
     con.close()
     print(
         f"curated {len(bars_out)} bars; {len(close_out)} close_adj; "
         f"{len(cal)} calendar days; {len(sym_out)} symbols"
     )
+    print(f"warehouse fingerprint: {manifest}")
 
 
 if __name__ == "__main__":

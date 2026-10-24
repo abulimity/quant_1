@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import pandas as pd
 
 from etf_rotation import __version__, config
-from etf_rotation.evaluation import plots, trades
+from etf_rotation.evaluation import plots
 from etf_rotation.pipeline import load_fund_basic, market_regime
 from etf_rotation.data import universe as univ
 
@@ -19,11 +20,19 @@ M_END = "<!-- /VIS:AUTO -->"
 
 
 def main() -> None:
-    """汇总 run_backtest 的产物，生成自包含 HTML 可视化报告 + 交易明细，并回写回测报告。
+    """汇总 run_backtest 的产物，生成自包含 HTML 可视化报告并回写回测报告。
 
-    依赖 reports/ 下已存在的 equity/metrics/sensitivity/weights/benchmark 与
-    transactions 文件，因此须先跑 run_backtest.py（及可选 run_sensitivity.py）。
+    只读 run 产物与其顶层镜像（equity/metrics/sensitivity/weights/benchmark/
+    transactions/trades）；交易明细由 run_backtest 的 full 档产出，本脚本不再写
+    trades.csv。档位不足时报错并打印重跑命令，不静默降级。
     """
+    latest_path = REPORTS / "latest.json"
+    if latest_path.exists():
+        latest = json.loads(latest_path.read_text(encoding="utf-8"))
+        if latest.get("profile") != "full":
+            sys.exit(
+                f"最新 run {latest.get('run_id')} 的档位是 {latest.get('profile')}，"
+                f"报告需要 full 档，请重跑：scripts\\run_backtest.py --save-profile full")
     params = config.load_params()
     # 读取 run_backtest 的产物（equity / metrics / sensitivity / weights / benchmark）
     equity = pd.read_csv(REPORTS / "equity.csv", parse_dates=["ts"]).set_index("ts")
@@ -65,9 +74,9 @@ def main() -> None:
         ("年化波动", f"{metrics['ann_vol']:.2%}"),
         ("日均换手", f"{metrics['turnover']:.2%}"),
     ]
-    # 交易明细（以引擎成交记录为唯一依据）
+    # 交易明细（以引擎成交记录为唯一依据；trades.csv 由 run_backtest full 档镜像产出）
     tx = pd.read_csv(REPORTS / "transactions.csv", parse_dates=["Date"]).set_index(["Date", "Security"])
-    t = trades.build_trade_table_from_engine(tx, cost_bps=params["costs"]["one_side_bps"])
+    t = pd.read_csv(REPORTS / "trades.csv", parse_dates=["date"])
 
     # 八个固定章节：每节 = (标题, 说明文字, plotly 图)
     sections = [
@@ -110,12 +119,8 @@ def main() -> None:
     plots.write_report(sections, stats, REPORTS / "可视化报告.html",
                        subtitle=f"{start} ~ {end} · 多资产 ETF 轮动策略 · v{__version__}")
 
-    try:
-        t.to_csv(REPORTS / "trades.csv", index=False, encoding="utf-8-sig")
-    except PermissionError:
-        print("WARNING: trades.csv 被占用（可能已在 Excel 中打开），保留现有文件")
     _write_report(_build_md(metrics, t))
-    print(f"可视化报告.html + trades.csv written; report updated; {len(t)} trades")
+    print(f"可视化报告.html written; report updated; {len(t)} trades")
 
 
 def _build_md(metrics: dict, t: pd.DataFrame) -> str:
