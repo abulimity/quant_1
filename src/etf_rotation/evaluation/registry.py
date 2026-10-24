@@ -4,10 +4,15 @@ from __future__ import annotations
 import hashlib
 import json
 import subprocess
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 import duckdb
+
+ROOT = Path(__file__).resolve().parents[3]   # 仓库根（src/etf_rotation/evaluation → 上溯三级）
+_REQUIREMENTS = ROOT / "requirements.txt"
+_ENV_PACKAGES = ("bt", "pandas", "numpy", "duckdb", "pyarrow", "ffn")
 
 
 def run_identity(params: dict, *, git_sha: str = "", data_snapshot_id: str = "",
@@ -36,6 +41,50 @@ def git_sha() -> str:
             ["git", "rev-parse", "--short", "HEAD"], text=True).strip()
     except Exception:
         return "unknown"
+
+
+def git_info() -> tuple[str, str]:
+    """返回 `(sha, dirty_hash)`：干净工作区 `dirty_hash` 为空串。
+
+    公式：dirty_hash = sha256(git diff 输出)[:8]（仅当工作区有**已跟踪文件**改动）
+    纪律：`git status` 加 `--untracked-files=no`。data/、reports/ 全是 git 忽略或
+    运行期产物，若把未跟踪文件算进「脏」，每次跑完回测都会得到新的 run_id，
+    内容寻址就失效了（同一代码 + 同一参数必须同 id）。
+    """
+    sha = git_sha()
+    try:
+        status = subprocess.check_output(
+            ["git", "status", "--porcelain", "--untracked-files=no"],
+            text=True, cwd=ROOT, stderr=subprocess.DEVNULL).strip()
+        if not status:
+            return sha, ""
+        diff = subprocess.check_output(
+            ["git", "diff"], cwd=ROOT, stderr=subprocess.DEVNULL)
+    except Exception:
+        # git 不可用（源码包/容器内）：无法判定脏，按干净处理，dirty_hash 留空
+        return sha, ""
+    return sha, hashlib.sha256(diff).hexdigest()[:8]
+
+
+def env_lock_hash() -> str:
+    """运行环境标识：依赖清单 + Python 版本 + 关键库版本，取 sha256 前 12 位。
+
+    公式：sha256( requirements.txt 字节 + sys.version
+                  + 各库 __version__（按固定顺序） )[:12]
+    用途：解释器/库升级会改变数值口径（例如 pandas 的 pct_change 默认值），
+    run 登记必须能查出「这个结果是哪套环境跑出来的」。
+    """
+    h = hashlib.sha256()
+    h.update(_REQUIREMENTS.read_bytes() if _REQUIREMENTS.exists() else b"")
+    h.update(sys.version.encode("utf-8"))
+    for name in _ENV_PACKAGES:
+        try:
+            module = __import__(name)
+            version = getattr(module, "__version__", "")
+        except Exception:
+            version = "missing"
+        h.update(f"{name}=={version}\n".encode("utf-8"))
+    return h.hexdigest()[:12]
 
 
 def register_run(db_path: Path, run_id: str, params: dict, metrics: dict,
