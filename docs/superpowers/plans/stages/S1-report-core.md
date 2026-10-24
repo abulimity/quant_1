@@ -35,7 +35,7 @@ tests/test_report_relative.py
 
 ## 产出契约（S2a/S2b/S3/D 都依赖）
 
-- `ReportContext.load(run_dir, *, strict_snapshot=False)`，字段名与主计划 Task 7 一致
+- `ReportContext.load(run_dir, *, strict_snapshot=False)`，字段名与主计划 Task 7 一致（含 `metrics: dict[str, float]`，从 `metrics.parquet` 读；指标可能缺键）
 - `runner.run(run_dir, ctx, only=None, mirror_to=None)`
 - `serialize.records / series / clean`
 - `derived/index.json`：`schema_version, derived_version, run_id, generated_at, data_snapshot_id, inputs{name:sha256}, steps{name:{ok,duration_ms,error}}`

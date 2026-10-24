@@ -771,7 +771,7 @@ git commit -m "fix(benchmark): 基准改用同日收益并对齐首日"
 - Create: `tests/test_report_context.py`、`tests/test_report_runner.py`
 
 **Interfaces:**
-- Produces: `ReportContext.load(run_dir: Path, *, strict_snapshot: bool = False) -> ReportContext`，字段：`run_id, meta, params, equity, benchmark, weights, holdings, trades, transactions, diary, ticker_signals, stages, classification, close, opn, amount`。
+- Produces: `ReportContext.load(run_dir: Path, *, strict_snapshot: bool = False) -> ReportContext`，字段：`run_id, meta, params, metrics, equity, benchmark, weights, holdings, trades, transactions, diary, ticker_signals, stages, classification, close, opn, amount`。`metrics` 是 `{指标名: float}`（来自 `metrics.parquet`；NaN 指标会被 `all_stats` 丢掉，取值方必须容忍缺键）。
 - Produces: step 模块暴露 `NAME: str` 与 `build(ctx: ReportContext) -> dict`。
 - Produces: `runner.run(run_dir: Path, ctx: ReportContext, only: list[str] | None = None, mirror_to: Path | None = None) -> dict[str, dict]`。
 - Produces: `serialize.records(df, index="date") -> list[dict]`、`serialize.series(s) -> {"dates": [...], "values": [...]}`、`serialize.clean(obj) -> Any`。
