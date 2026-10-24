@@ -1,111 +1,17 @@
-import json
+"""旧 registry 测试的留存部分：文件哈希与数据快照 id。
+
+原本的 duckdb `runs`/`run_metrics` 断言随登记层改为 parquet 而删除，
+run_identity 的维度断言移到 `tests/test_registry_parquet.py`；
+这里只留 snapshot 相关的纯函数/真实数据冒烟。
+"""
+from __future__ import annotations
+
 import tempfile
 from pathlib import Path
 
-import duckdb
+import pytest
 
-from etf_rotation.data import snapshot
-from etf_rotation.evaluation import registry
-
-
-def test_run_identity_deterministic_and_dimensioned():
-    p = {"x": 1, "y": {"z": 2}}
-    kw = dict(git_sha="g1", data_snapshot_id="d1", execution="close", signal_version="s1")
-    id1 = registry.run_identity(p, **kw)
-    assert id1 == registry.run_identity({"y": {"z": 2}, "x": 1}, **kw)
-    for field, val in [("execution", "open"), ("git_sha", "g2"),
-                       ("data_snapshot_id", "d2"), ("signal_version", "s2")]:
-        kw2 = dict(kw)
-        kw2[field] = val
-        assert registry.run_identity(p, **kw2) != id1
-
-
-def test_register_run_writes_rows(tmp_path: Path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    db = tmp_path / "r.duckdb"
-    run_id = "abc123"
-    report_root = tmp_path / "reports"
-    registry.register_run(db, run_id, {"a": 1}, {"sharpe": 1.2},
-                          {"equity": str(tmp_path / "e.csv")}, report_root=report_root)
-
-    con = duckdb.connect(str(db))
-    assert con.execute("SELECT count(*) FROM runs WHERE run_id=?", [run_id]).fetchone()[0] == 1
-    assert con.execute("SELECT value FROM run_metrics WHERE run_id=? AND metric='sharpe'",
-                       [run_id]).fetchone()[0] == 1.2
-    con.close()
-
-    manifest = json.loads(
-        (report_root / "runs" / run_id / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["artifacts"]["equity"] == str(tmp_path / "e.csv")
-
-
-def test_register_run_append_only(tmp_path: Path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    db = tmp_path / "r.duckdb"
-    run_id = "abc"
-    report_root = tmp_path / "reports"
-    registry.register_run(db, run_id, {"a": 1}, {"sharpe": 1.2}, {}, report_root=report_root)
-    registry.register_run(db, run_id, {"a": 1}, {"sharpe": 99.0}, {}, report_root=report_root)
-
-    con = duckdb.connect(str(db))
-    assert con.execute("SELECT count(*) FROM runs WHERE run_id=?", [run_id]).fetchone()[0] == 1
-    assert con.execute("SELECT value FROM run_metrics WHERE run_id=? AND metric='sharpe'",
-                       [run_id]).fetchone()[0] == 1.2
-    con.close()
-
-
-def test_register_run_stores_execution_column(tmp_path: Path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    db = tmp_path / "r.duckdb"
-    registry.register_run(db, "a", {"x": 1}, {"sharpe": 1.0}, {},
-                          execution="open", report_root=tmp_path / "reports")
-    con = duckdb.connect(str(db))
-    assert con.execute("SELECT execution FROM runs WHERE run_id='a'").fetchone()[0] == "open"
-    con.close()
-
-
-def test_register_run_marks_superseded(tmp_path: Path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    db = tmp_path / "r.duckdb"
-    report_root = tmp_path / "reports"
-    registry.register_run(db, "abc", {"a": 1}, {"sharpe": 1.2}, {}, report_root=report_root)
-    registry.register_run(db, "abc", {"a": 1}, {"sharpe": 99.0}, {}, report_root=report_root)
-    con = duckdb.connect(str(db))
-    assert con.execute("SELECT count(*) FROM runs WHERE run_id='abc'").fetchone()[0] == 1
-    assert con.execute("SELECT superseded FROM runs WHERE run_id='abc'").fetchone()[0] is True
-    assert con.execute("SELECT value FROM run_metrics WHERE run_id='abc' AND metric='sharpe'",
-                       ).fetchone()[0] == 1.2
-    con.close()
-
-
-def test_register_run_migrates_old_schema(tmp_path: Path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    db = tmp_path / "r.duckdb"
-    con = duckdb.connect(str(db))
-    # 旧 schema：runs 无 execution / superseded 列
-    con.execute("""
-        CREATE TABLE runs (
-            run_id VARCHAR PRIMARY KEY, spec_id VARCHAR NOT NULL, engine VARCHAR NOT NULL,
-            origin VARCHAR NOT NULL, created_at TIMESTAMP NOT NULL,
-            data_snapshot_id VARCHAR NOT NULL, env_lock_hash VARCHAR NOT NULL,
-            git_sha VARCHAR NOT NULL, params_json VARCHAR NOT NULL, status VARCHAR NOT NULL,
-            CHECK (status IN ('ok', 'failed', 'partial')))
-    """)
-    con.execute("""CREATE TABLE run_metrics (
-        run_id VARCHAR NOT NULL, metric VARCHAR NOT NULL, value DOUBLE NOT NULL,
-        PRIMARY KEY (run_id, metric))""")
-    con.execute("INSERT INTO runs VALUES ('old1', 'etf-rotation', 'bt', 'run_backtest', "
-                "'2026-01-01', '', '', '', '{}', 'ok')")
-    con.close()
-
-    registry.register_run(db, "new1", {"a": 1}, {"sharpe": 1.0}, {},
-                          execution="open", report_root=tmp_path / "reports")
-    con = duckdb.connect(str(db))
-    cols = set(con.execute("DESCRIBE runs").df()["column_name"])
-    assert {"execution", "superseded"} <= cols
-    assert con.execute("SELECT execution FROM runs WHERE run_id='new1'").fetchone()[0] == "open"
-    assert con.execute("SELECT execution FROM runs WHERE run_id='old1'").fetchone()[0] == "close"
-    con.close()
+from etf_rotation.data import paths, snapshot
 
 
 def test_hash_files_stable_and_order_independent():
@@ -123,7 +29,9 @@ def test_hash_files_stable_and_order_independent():
         assert id1 != id3
 
 
+@pytest.mark.skipif(not (paths.BARS.exists() and paths.IDX.exists()),
+                    reason="真实 bronze 数据未就绪（需先 fetch/curate）")
 def test_data_snapshot_id_nonempty_stable():
     sid = snapshot.data_snapshot_id()
-    assert isinstance(sid, str) and sid
+    assert isinstance(sid, str) and len(sid) == 12
     assert sid == snapshot.data_snapshot_id()
