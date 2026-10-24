@@ -1,5 +1,10 @@
 # 回测报告派生数据（N1–N13）实施计划
 
+> ⚠️ **已被取代，请勿执行本文件。** 内容已并入
+> `docs/superpowers/plans/2026-10-24-etf-rotation-persistence-and-report-data.md`（合并版）：
+> 任务重新编号、输入改为 `reports/runs/{run_id}/`、`trades` 上移为回测产物、
+> N1 补首日对齐、N9 改 beta 缩放、N12 增加残差对账。本文件仅作历史记录。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 为回测报告补齐 13 项派生计算（基准对齐、水下/回撤事件、相对指标、调仓事件、成本拖累、目标 vs 实际、单笔往返、阶段归因、极端日、滑点、容量、剔除防守相关性），并把结果落成前端可直接消费的 `reports/derived/*.json`。
