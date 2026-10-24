@@ -57,5 +57,6 @@ $PY -c "import json;d=json.load(open('reports/derived/index.json',encoding='utf-
 ## 注意
 
 - `ReportContext` 加载价格用 `pipeline.load_prices()`；单测必须 monkeypatch，不能读真实数据。
+- `lag_correlation` 的索引是 `|lag|` 序（0, ±1, ±2…），**写 JSON 前必须按 lag 数值升序重排**，否则前端横轴是 0,1,-1,2…；`peak_lag` 在原始序列上取 `idxmax`。
 - `runner` 单步失败不抛异常，只写 `ok=False`；`index.json` 永远写成功。
 - 派生 JSON 必须能通过 `json.dumps(..., allow_nan=False)`。

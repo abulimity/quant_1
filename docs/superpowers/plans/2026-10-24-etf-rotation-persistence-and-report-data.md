@@ -278,7 +278,7 @@ $env:PYTHONIOENCODING = "utf-8"
 $env:ETF_BARS_PARQUET    = "$DataRoot\data\bronze\tushare\tushare-f4f7c81a15b5779c\bars_daily.parquet"
 $env:ETF_ADJ_PARQUET     = "$DataRoot\data\bronze\tushare\tushare-f4f7c81a15b5779c\fund_adj.parquet"
 $env:ETF_SYMBOLS_PARQUET = "$DataRoot\data\bronze\tushare\tushare-f4f7c81a15b5779c\symbols.parquet"
-$env:ETF_INDEX_PARQUET   = "$DataRoot\data\bronze\tushare\tushare-index-86318b52ea0fbe04\index_daily.parquet"
+$env:ETF_INDEX_PARQUET   = "$DataRoot\data\bronze\tushare\tushare_index-86318b52ea0fbe04\index_daily.parquet"
 $env:ETF_FETCHED_DIR     = "$DataRoot\data\bronze\tushare\etf_rotation"
 $env:ETF_WAREHOUSE_DUCKDB= "$DataRoot\data\warehouse.duckdb"
 $env:PY = "$DataRoot\.venv\Scripts\python.exe"
@@ -673,7 +673,7 @@ git commit -m "feat(run): 回测产物按 run 落盘并新增档位与交易明�
 - Test: `tests/test_alignment.py`
 
 **Interfaces:**
-- Produces: `alignment.lag_correlation(strategy: pd.Series, benchmark: pd.Series, max_lag: int = 5) -> pd.Series`（index=lag，`corr_k = Corr(s_t, b_{t−k})`）。
+- Produces: `alignment.lag_correlation(strategy: pd.Series, benchmark: pd.Series, max_lag: int = 5) -> pd.Series`（index=lag；`corr_k = Corr(s_t, b_{t+k})`，k 为策略相对基准的滞后，`k=-1` 表示策略晚一天；索引按 `|lag|` 升序返回，保证周期样本出现并列峰值时 `idxmax` 命中 0）。
 - Produces: `compute_benchmark` 列不变，日期语义为「t 日净值含 t 日收益」，且第 1 个交易日收益为 0。
 
 - [ ] **Step 1: 写失败测试**
@@ -854,7 +854,7 @@ def test_index_has_run_id_and_inputs(tmp_path):
 - `context.py`：读 `meta.parquet` 单行 → `meta`，**先**校验 `schema_version` 与（`strict_snapshot=True` 时）`data_snapshot_id`，再加载产物；`params = json.loads(meta["params_json"])`；按 §1.4 读已有产物（缺则 `None`）；`classification = universe.classify(load_fund_basic())`；价格面板 `load_prices()` 一次加载。
 - `serialize.py`：`clean` 递归处理 `Timestamp→YYYY-MM-DD`、numpy 标量、`NaN/Inf→None`；`records` 先把 index 转成列并格式化日期；`series` 丢掉 NaN 日期但保留 `None` 值。
 - `runner.py`：`pkgutil.iter_modules(steps.__path__)` 发现模块；先写临时目录，全部成功后改名；`index.json` 的 `inputs` 取自 `artifacts.parquet` 的 `name→sha256`，该文件不存在时写空 dict；任一步异常只写 `ok=False, error=str(exc)`；`mirror_to` 时 `copytree` 覆盖。
-- `steps/alignment.py`：`lag_correlation(ctx.equity["returns"], ctx.benchmark["hs300"].pct_change())`，输出 `{"lags", "corrs", "peak_lag", "ok"}`；`benchmark is None` 时抛 `RuntimeError("benchmark 缺失")`。
+- `steps/alignment.py`：`lag_correlation(ctx.equity["returns"], ctx.benchmark["hs300"].pct_change())`，输出 `{"lags", "corrs", "peak_lag", "ok"}`；`lags/corrs` 必须按 lag 数值升序（函数返回的是 `|lag|` 序，直接序列化会让前端横轴变成 0,1,-1,2…），`peak_lag` 在原始序列上取 `idxmax`；`benchmark is None` 时抛 `RuntimeError("benchmark 缺失")`。
 - `scripts/build_report_data.py`：`--run-id`/`--latest`/`--only`；`resolve_run` 定位；`meta.save_profile != "full"` 时报错并提示重跑命令；失败 `sys.exit(1)`。
 
 - [ ] **Step 4: 跑测试确认通过** → PASS
@@ -975,6 +975,7 @@ def test_beta_scaling_preserves_average_exposure():
 
 `relative_summary` 分母为 0 时返回 `None`，禁止 `inf`/`nan`。捕获率 `mean(r_s | r_b > 0) / mean(r_b | r_b > 0)`。
 `risk_sleeve_relative`：`w_risk = weights` 把 `bond/money` 列置 0；`mean_risk_weight = w_risk.sum(axis=1).mean()`；`beta_scaling = mean_risk_weight`；`beta_risk_sleeve` 用 `w_risk / mean_risk_weight` 计算（平均暴露回到 1，与基准可比），`corr_risk_sleeve` 用归一化到 1 的权重（尺度无关）。三者都写进输出。
+`build` 除 summary/rolling/annual_excess/ex_defensive 外，还要给 `lag_scan`（复用 `alignment.lag_correlation`）；**`lags/corrs` 序列化前按 lag 数值升序重排**，函数本身的 `|lag|` 索引只用于让 `idxmax` 在并列时命中 0。
 
 - [ ] **Step 4: 跑测试确认通过** → PASS
 
