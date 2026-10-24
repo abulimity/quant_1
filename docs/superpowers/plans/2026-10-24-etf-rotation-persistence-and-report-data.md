@@ -270,6 +270,10 @@ reports/legacy/**
 
 ```powershell
 param([string]$DataRoot = "D:\project\quant_1")
+
+# Reuse the main checkout's data and virtualenv from a git worktree.
+# NOTE: keep this file ASCII-only. PowerShell 5.1 reads BOM-less .ps1 as ANSI,
+# and a multi-byte CJK comment can swallow the following newline.
 $env:PYTHONIOENCODING = "utf-8"
 $env:ETF_BARS_PARQUET    = "$DataRoot\data\bronze\tushare\tushare-f4f7c81a15b5779c\bars_daily.parquet"
 $env:ETF_ADJ_PARQUET     = "$DataRoot\data\bronze\tushare\tushare-f4f7c81a15b5779c\fund_adj.parquet"
@@ -279,7 +283,7 @@ $env:ETF_FETCHED_DIR     = "$DataRoot\data\bronze\tushare\etf_rotation"
 $env:ETF_WAREHOUSE_DUCKDB= "$DataRoot\data\warehouse.duckdb"
 $env:PY = "$DataRoot\.venv\Scripts\python.exe"
 
-# worktree 没有 reports/（被 .gitignore 排除）：把基线参照拷进来，供数值对照
+# Worktrees do not get the gitignored reports/ tree: copy the baseline reference in.
 $legacyDst = Join-Path (Get-Location) "reports\legacy"
 if (-not (Test-Path "$legacyDst\v1.1.1")) {
     New-Item -ItemType Directory -Force $legacyDst | Out-Null
@@ -1910,6 +1914,7 @@ $PY -m pytest tests -q
 - `reports/` 在 worktree 内独立，`latest.json`、顶层镜像、`runs/` 不会跨会话互相覆盖。`activate_data.ps1` 会把主仓库的 `reports/legacy/v1.1.1/` 拷进来，供数值对照。
 - `data/` 通过 `ETF_*` 环境变量指向主仓库；**只读使用**，不要在主仓库的 `data/` 里手工删改。
 - `data/cache/signals/` 是跨 worktree 共享的：写入已按 §1.6 要求做成 `tmp-{pid}` + rename，子会话**不要**手工清理该目录。
+- `scripts/activate_data.ps1` 必须保持 **ASCII 注释**：PowerShell 5.1 把无 BOM 的 `.ps1` 当 ANSI 读，中文注释末尾的多字节字符会吞掉换行，把下一行代码并进注释。
 - worktree 只 checkout 已提交内容：**编排者必须先提交计划文档与 `docs/superpowers/plans/stages/`，再创建 worktree**。
 
 ### 6.6 产物归属
