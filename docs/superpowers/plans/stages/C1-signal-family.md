@@ -34,11 +34,11 @@ tests/test_families.py
 
 ```powershell
 . D:\project\quant_1\scripts\activate_data.ps1
-$PY -m pytest tests/test_signal_cache.py tests/test_families.py -q
+& $env:PY -m pytest tests/test_signal_cache.py tests/test_families.py -q
 
 # 冷→热耗时（同一命令跑两次）
-$env:ETF_SIGNAL_CACHE="off"; Measure-Command { $PY scripts\run_backtest.py 2019-01-01 2026-07-31 }
-Measure-Command { $PY scripts\run_backtest.py 2019-01-01 2026-07-31 }
+$env:ETF_SIGNAL_CACHE="off"; Measure-Command { & $env:PY scripts\run_backtest.py 2019-01-01 2026-07-31 }
+Measure-Command { & $env:PY scripts\run_backtest.py 2019-01-01 2026-07-31 }
 Get-ChildItem data\cache\signals
 ```
 

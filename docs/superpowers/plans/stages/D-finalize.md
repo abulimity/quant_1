@@ -31,12 +31,12 @@ tests/test_verify_artifacts.py
 
 ```powershell
 . D:\project\quant_1\scripts\activate_data.ps1
-$PY -m pytest tests/test_verify_artifacts.py -q
+& $env:PY -m pytest tests/test_verify_artifacts.py -q
 
-$PY scripts\run_backtest.py 2019-01-01 2026-07-31 --save-profile full
-$PY scripts\build_report_data.py --only alignment,performance
-$PY scripts\verify_artifacts.py
-$PY scripts\run_attribution.py --run-id <上一步 latest.json 的 run_id>
+& $env:PY scripts\run_backtest.py 2019-01-01 2026-07-31 --save-profile full
+& $env:PY scripts\build_report_data.py --only alignment,performance
+& $env:PY scripts\verify_artifacts.py
+& $env:PY scripts\run_attribution.py --run-id <上一步 latest.json 的 run_id>
 ```
 
 预期：测试全绿；`verify_artifacts` 无输出；`run_attribution` 把结果写进该 run 目录的 `analysis/`，同时更新顶层镜像；改动一个产物字节后 verify 能报出文件名。
@@ -65,7 +65,7 @@ docs/superpowers/specs/2026-10-24-etf-rotation-report-content-spec.md
 ### 验收
 
 ```powershell
-$PY scripts\verify_artifacts.py
+& $env:PY scripts\verify_artifacts.py
 git status --porcelain
 git log --oneline -5
 ```

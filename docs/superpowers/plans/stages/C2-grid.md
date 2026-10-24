@@ -41,11 +41,11 @@ tests/test_sweep.py
 
 ```powershell
 . D:\project\quant_1\scripts\activate_data.ps1
-$PY -m pytest tests/test_sweep.py tests/test_families.py -q
+& $env:PY -m pytest tests/test_sweep.py tests/test_families.py -q
 
-$PY scripts\run_grid.py --grid defensive.max_vol_60d=0.03,0.04 --save-profile minimal --campaign demo
-$PY scripts\collect_runs.py --family <上一步输出的 family_id>
-$PY -c "import json;print(json.load(open('reports/families/<fid>/summary.json',encoding='utf-8'))['n_trials'])"
+& $env:PY scripts\run_grid.py --grid defensive.max_vol_60d=0.03,0.04 --save-profile minimal --campaign demo
+& $env:PY scripts\collect_runs.py --family <上一步输出的 family_id>
+& $env:PY -c "import json;print(json.load(open('reports/families/<fid>/summary.json',encoding='utf-8'))['n_trials'])"
 ```
 
 预期：测试全绿；2 个 run 目录；family `n_trials == 2`；`reports/latest.json` 未被网格覆盖。

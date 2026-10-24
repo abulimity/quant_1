@@ -45,11 +45,11 @@ tests/test_report_relative.py
 
 ```powershell
 . D:\project\quant_1\scripts\activate_data.ps1
-$PY -m pytest tests/test_report_context.py tests/test_report_runner.py tests/test_report_performance.py tests/test_report_relative.py -q
+& $env:PY -m pytest tests/test_report_context.py tests/test_report_runner.py tests/test_report_performance.py tests/test_report_relative.py -q
 
-$PY scripts\run_backtest.py 2019-01-01 2026-07-31 --save-profile full
-$PY scripts\build_report_data.py --latest
-$PY -c "import json;d=json.load(open('reports/derived/index.json',encoding='utf-8'));print(d['run_id'], {k:v['ok'] for k,v in d['steps'].items()})"
+& $env:PY scripts\run_backtest.py 2019-01-01 2026-07-31 --save-profile full
+& $env:PY scripts\build_report_data.py --latest
+& $env:PY -c "import json;d=json.load(open('reports/derived/index.json',encoding='utf-8'));print(d['run_id'], {k:v['ok'] for k,v in d['steps'].items()})"
 ```
 
 预期：测试全绿；`alignment`/`performance`/`relative` 三个 step 为 `True`；`peak_lag == 0`；`corr_full ≈ 0.51`、`beta_full ≈ 0.31`。

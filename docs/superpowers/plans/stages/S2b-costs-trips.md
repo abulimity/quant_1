@@ -35,10 +35,10 @@ tests/test_report_liquidity.py
 
 ```powershell
 . D:\project\quant_1\scripts\activate_data.ps1
-$PY -m pytest tests/test_report_costs.py tests/test_report_roundtrips.py tests/test_report_liquidity.py -q
+& $env:PY -m pytest tests/test_report_costs.py tests/test_report_roundtrips.py tests/test_report_liquidity.py -q
 
-$PY scripts\run_backtest.py 2019-01-01 2026-07-31 --save-profile full
-$PY scripts\build_report_data.py --only costs,roundtrips,liquidity
+& $env:PY scripts\run_backtest.py 2019-01-01 2026-07-31 --save-profile full
+& $env:PY scripts\build_report_data.py --only costs,roundtrips,liquidity
 ```
 
 预期：测试全绿；三个 step `ok`；`costs.reconciliation.relative_error < 0.005`；往返 5,000–12,000、胜率 40–60%；`vs_open_bps` 中位数 ≈ 0。

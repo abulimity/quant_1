@@ -38,10 +38,10 @@ tests/test_report_extremes.py
 
 ```powershell
 . D:\project\quant_1\scripts\activate_data.ps1
-$PY -m pytest tests/test_report_events.py tests/test_report_execution.py tests/test_report_extremes.py -q
+& $env:PY -m pytest tests/test_report_events.py tests/test_report_execution.py tests/test_report_extremes.py -q
 
-$PY scripts\run_backtest.py 2019-01-01 2026-07-31 --save-profile full
-$PY scripts\build_report_data.py --only events,execution,extremes
+& $env:PY scripts\run_backtest.py 2019-01-01 2026-07-31 --save-profile full
+& $env:PY scripts\build_report_data.py --only events,execution,extremes
 ```
 
 预期：测试全绿；三个 step `ok`；事件数 300–800；`mean_abs` 中位数 < 0.5%；`extremes` 的 `|residual|` 中位数 < 5bp。

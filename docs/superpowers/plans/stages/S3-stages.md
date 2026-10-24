@@ -39,10 +39,10 @@ tests/test_observability.py
 
 ```powershell
 . D:\project\quant_1\scripts\activate_data.ps1
-$PY -m pytest tests/test_report_stages.py tests/test_observability.py -q
+& $env:PY -m pytest tests/test_report_stages.py tests/test_observability.py -q
 
-$PY scripts\run_backtest.py 2019-01-01 2026-07-31 --save-profile full
-$PY scripts\build_report_data.py --only stages
+& $env:PY scripts\run_backtest.py 2019-01-01 2026-07-31 --save-profile full
+& $env:PY scripts\build_report_data.py --only stages
 ```
 
 预期：测试全绿；`signals/stages.parquet` 存在；每个事件 `Σfinal == diary.total_weight`；`Σcandidate ≥ Σfinal`；`nav` 与 `reports/legacy/v1.1.1/equity.csv` 完全一致（本任务不得改变任何数值）。

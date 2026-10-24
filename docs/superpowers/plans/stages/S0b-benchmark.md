@@ -27,13 +27,13 @@ tests/test_alignment.py
 
 ```powershell
 . D:\project\quant_1\scripts\activate_data.ps1
-$PY -m pytest tests/test_alignment.py -q
+& $env:PY -m pytest tests/test_alignment.py -q
 ```
 
 真实数据（不依赖 S0a 的镜像，直接调函数）：
 
 ```powershell
-$PY -c "import pandas as pd; from etf_rotation import pipeline, config; from etf_rotation.evaluation.alignment import lag_correlation; p=config.load_params(); b=pipeline.compute_benchmark(p,'2019-01-01','2026-07-31'); b.to_csv('reports/benchmark_new.csv'); e=pd.read_csv(r'reports/legacy/v1.1.1/equity.csv',parse_dates=['ts']).set_index('ts'); print(lag_correlation(e['returns'], b['hs300'].pct_change()).round(3)); print('first-day nav', b['hs300'].iloc[0], b['benchmark'].iloc[0])"
+& $env:PY -c "import pandas as pd; from etf_rotation import pipeline, config; from etf_rotation.evaluation.alignment import lag_correlation; p=config.load_params(); b=pipeline.compute_benchmark(p,'2019-01-01','2026-07-31'); b.to_csv('reports/benchmark_new.csv'); e=pd.read_csv(r'reports/legacy/v1.1.1/equity.csv',parse_dates=['ts']).set_index('ts'); print(lag_correlation(e['returns'], b['hs300'].pct_change()).round(3)); print('first-day nav', b['hs300'].iloc[0], b['benchmark'].iloc[0])"
 ```
 
 预期：峰值在 `0`、`corr(0) ≈ 0.51`、首日净值 `1.0`。

@@ -14,8 +14,8 @@
 
 ```powershell
 (Get-ChildItem reports\runs -Directory | Where-Object { $_.Name -ne '.staging' }).Count
-$PY -c "from pathlib import Path; from etf_rotation.evaluation import registry; print(len(registry.load_runs(Path('reports/runs'))))"
-$PY -c "import duckdb;print([r[0] for r in duckdb.connect('data/warehouse.duckdb').execute('show tables').fetchall()])"
+& $env:PY -c "from pathlib import Path; from etf_rotation.evaluation import registry; print(len(registry.load_runs(Path('reports/runs'))))"
+& $env:PY -c "import duckdb;print([r[0] for r in duckdb.connect('data/warehouse.duckdb').execute('show tables').fetchall()])"
 ```
 
 预期：目录数 == `load_runs` 数量；表列表不含 `runs`/`run_metrics`。

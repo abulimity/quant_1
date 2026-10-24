@@ -21,10 +21,10 @@
 
 ```powershell
 . D:\project\quant_1\scripts\activate_data.ps1
-$PY -m pytest tests/test_config.py tests/test_universe.py -q   # 环境自检
+& $env:PY -m pytest tests/test_config.py tests/test_universe.py -q   # 环境自检
 ```
 
-全量 `$PY -m pytest tests -q` 由编排者在每个波次合并后统一跑，子会话不要重复跑（一次约 10 分钟，多路并发会互相拖慢）。
+全量 `& $env:PY -m pytest tests -q` 由编排者在每个波次合并后统一跑，子会话不要重复跑（一次约 10 分钟，多路并发会互相拖慢）。
 
 - `reports/` 在 worktree 内独立；`data/` 通过 `ETF_*` 变量指向主仓库，**只读**。
 - `activate_data.ps1` 会把主仓库的 `reports/legacy/v1.1.1/` 拷进当前 worktree，供「策略数值不变」的对照；缺了对照就先重跑一次脚本。

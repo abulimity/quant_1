@@ -23,8 +23,8 @@ reports/index.md           # 20a 生成
 
 ```powershell
 . D:\project\quant_1\scripts\activate_data.ps1
-$PY -m pytest tests -q
-$PY scripts\verify_artifacts.py   # Task 21 已合并时应可用
+& $env:PY -m pytest tests -q
+& $env:PY scripts\verify_artifacts.py   # Task 21 已合并时应可用
 ```
 
 ## 验收
@@ -32,7 +32,7 @@ $PY scripts\verify_artifacts.py   # Task 21 已合并时应可用
 20a：
 
 ```powershell
-$PY scripts\collect_runs.py --campaign tuning-2026-10
+& $env:PY scripts\collect_runs.py --campaign tuning-2026-10
 ```
 
 预期：`reports/index.md` 列出所有 family，总试验数约 40；每个 `summary.json` 有 `dsr_family` 与 `dsr_campaign`；`reports/runs/` 下每个成员都能找到目录。
@@ -40,11 +40,11 @@ $PY scripts\collect_runs.py --campaign tuning-2026-10
 20b：
 
 ```powershell
-$PY scripts\run_backtest.py 2019-01-01 2026-07-31 --save-profile full
-$PY scripts\build_report_data.py --latest
-$PY scripts\run_report.py
-$PY scripts\verify_artifacts.py
-$PY -c "import pandas as pd; a=pd.read_csv('reports/legacy/v1.1.1/equity.csv',parse_dates=['ts']).set_index('ts'); b=pd.read_csv('reports/equity.csv',parse_dates=['ts']).set_index('ts'); print((a['nav']-b['nav']).abs().max())"
+& $env:PY scripts\run_backtest.py 2019-01-01 2026-07-31 --save-profile full
+& $env:PY scripts\build_report_data.py --latest
+& $env:PY scripts\run_report.py
+& $env:PY scripts\verify_artifacts.py
+& $env:PY -c "import pandas as pd; a=pd.read_csv('reports/legacy/v1.1.1/equity.csv',parse_dates=['ts']).set_index('ts'); b=pd.read_csv('reports/equity.csv',parse_dates=['ts']).set_index('ts'); print((a['nav']-b['nav']).abs().max())"
 ```
 
 预期：派生 10 个 step 全 `ok`；`verify_artifacts` 无输出；`nav` 差值 `0.0`；`回测报告.md` 的自动段落带新 `run_id`。

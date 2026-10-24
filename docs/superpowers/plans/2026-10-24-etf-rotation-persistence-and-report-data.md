@@ -55,7 +55,7 @@ family_id        = sha256( kind + grid_spec + base_params + start + end
 ```
 
 - 不做 v1 兼容：旧 40 个 run 延后到 Task 23 清理；期间保留在磁盘上但不参与新查询，`run_id` 直接采用上式，`schema_version = 2`。
-- 工作区有未提交改动时，`run_id` 追加 `dirty_hash = sha256(git diff)[:8]`，并写 `git_dirty = TRUE`；这样两次不同的脏工作区不会撞 id。
+- 工作区有未提交改动时，`run_id` 追加 `dirty_hash = sha256(git diff -- . ':(exclude)reports' ':(exclude)data')[:8]`，并写 `git_dirty = TRUE`。排除 `reports/`、`data/` 是必须的：镜像与产物本身就是流程写出来的，计入会让同一份代码重跑必换 id。
 - `signal_id` 不含 `git_sha`，只含**信号相关代码**的哈希（`signals/trend.py`、`signals/market_state.py`、`signals/reversal.py`、`portfolio/risk_layers.py`、`pipeline._precompute_signals` 源码）。因此改报告、改脚本不会让信号缓存失效。
 
 ### 1.2 写入
@@ -406,7 +406,7 @@ Run: `.venv\Scripts\python.exe -m pytest tests/test_snapshot_ledger.py -q` → P
 - [ ] **Step 5: 实现 env_lock_hash、git_info 与 signal_id**
 
 `env_lock_hash = sha256(requirements.txt 字节 + sys.version + bt/pandas/numpy/duckdb/pyarrow/ffn 的 __version__)[:12]`。
-`git_info`：`git rev-parse --short HEAD` 与 `git status --porcelain`；非空时 `dirty_hash = sha256(git diff 输出)[:8]`。
+`git_info`：`git rev-parse --short HEAD` 与 `git status --porcelain --untracked-files=no -- . ':(exclude)reports' ':(exclude)data'`；非空时 `dirty_hash = sha256(git diff 同 pathspec)[:8]`。`reports/`、`data/` 是运行期产物，必须排除（否则重跑换 id）。
 `signal_id`：`sha256(data_snapshot_id + json(signal_cache_key(params)) + code_hash)[:12]`，其中 `code_hash` 对 §1.1 列出的信号文件与 `pipeline._precompute_signals` 源码（`inspect.getsource`）取哈希；**不含 git_sha**。
 
 - [ ] **Step 6: 验证真实数据**
@@ -433,7 +433,7 @@ git commit -m "feat(registry): 数据快照指纹、环境标识与 signal_id"
 - Delete from: `tests/test_registry.py`（旧 duckdb 断言，改为新文件覆盖）
 
 **Interfaces:**
-- Produces: `registry.RUNS_DIR`、`registry.FAMILIES_DIR`、`registry.STAGING_DIR`（均为 `Path`，默认 `reports/runs`、`reports/families`、`reports/.staging`）。
+- Produces: `registry.RUNS_DIR`、`registry.FAMILIES_DIR`、`registry.STAGING_DIR`（均为 `Path`，默认 `reports/runs`、`reports/families`、`reports/runs/.staging`）。
 - Produces: `registry.run_identity(params: dict, *, git_sha: str, dirty_hash: str, data_snapshot_id: str, execution: str, signal_id: str) -> str`（按 §1.1 公式；`dirty_hash` 非空时并入哈希）。
 - Produces: `registry.ArtifactInfo = namedtuple("ArtifactInfo", "name path sha256 bytes rows cols")`。
 - Produces: `registry.write_run(root: Path, run_id: str, meta: dict, metrics: dict, artifacts: list[ArtifactInfo]) -> Path`：写 `meta.parquet`（单行）、`metrics.parquet`（长表 `run_id, metric, value`）、`artifacts.parquet`、`manifest.json`。
@@ -1909,10 +1909,11 @@ git commit -m "chore: 新登记体系验证通过后清理旧 run"
 
 ```powershell
 . D:\project\quant_1\scripts\activate_data.ps1
-$PY -m pytest tests -q
+& $env:PY -m pytest tests -q
 ```
 
 - `reports/` 在 worktree 内独立，`latest.json`、顶层镜像、`runs/` 不会跨会话互相覆盖。`activate_data.ps1` 会把主仓库的 `reports/legacy/v1.1.1/` 拷进来，供数值对照。
+- `activate_data.ps1` 会设 `PYTHONPATH=<当前 worktree>\src`：venv 是 editable 安装、默认指向主仓库，不设这项会让 worktree 里的测试**静默跑主仓库代码**。
 - `data/` 通过 `ETF_*` 环境变量指向主仓库；**只读使用**，不要在主仓库的 `data/` 里手工删改。
 - `data/cache/signals/` 是跨 worktree 共享的：写入已按 §1.6 要求做成 `tmp-{pid}` + rename，子会话**不要**手工清理该目录。
 - `scripts/activate_data.ps1` 必须保持 **ASCII 注释**：PowerShell 5.1 把无 BOM 的 `.ps1` 当 ANSI 读，中文注释末尾的多字节字符会吞掉换行，把下一行代码并进注释。
@@ -1943,7 +1944,7 @@ $PY -m pytest tests -q
 - 按任务内 Step 顺序做 TDD：先写失败测试 → 跑失败 → 实现 → 跑通过 → 提交。
 - 一个 Task 一个 commit，message 用计划里给的。
 - 不 merge、不 rebase 到 main、不 push、不改 main 上的数据。
-- 验证命令用 . D:\project\quant_1\scripts\activate_data.ps1 后的 $PY。
+- 验证命令先 `. D:\project\quant_1\scripts\activate_data.ps1`，再用 `& $env:PY ...`（`$PY` 不是可执行变量，必须加 `&`）。
 - 结束回复只给：完成的任务号、每个 commit 的 hash、验收命令的实际输出、未解决项。
 ```
 

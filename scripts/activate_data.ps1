@@ -12,6 +12,8 @@ $env:ETF_INDEX_PARQUET    = "$DataRoot\data\bronze\tushare\tushare_index-86318b5
 $env:ETF_FETCHED_DIR      = "$DataRoot\data\bronze\tushare\etf_rotation"
 $env:ETF_WAREHOUSE_DUCKDB = "$DataRoot\data\warehouse.duckdb"
 $env:PY = "$DataRoot\.venv\Scripts\python.exe"
+# Make the worktree's src win over the editable install pointing at the main checkout.
+$env:PYTHONPATH = Join-Path (Get-Location) "src"
 
 # Worktrees do not get the gitignored reports/ tree: copy the baseline reference in.
 $legacyDst = Join-Path (Get-Location) "reports\legacy"

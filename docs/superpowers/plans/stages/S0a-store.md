@@ -41,11 +41,11 @@ tests/test_run_backtest_artifacts.py
 
 ```powershell
 . D:\project\quant_1\scripts\activate_data.ps1
-$PY -m pytest tests/test_snapshot_ledger.py tests/test_registry_parquet.py tests/test_artifacts.py tests/test_run_backtest_artifacts.py -q
+& $env:PY -m pytest tests/test_snapshot_ledger.py tests/test_registry_parquet.py tests/test_artifacts.py tests/test_run_backtest_artifacts.py -q
 
-$PY scripts\run_backtest.py 2019-01-01 2026-07-31 --save-profile full
+& $env:PY scripts\run_backtest.py 2019-01-01 2026-07-31 --save-profile full
 Get-ChildItem reports\runs -Recurse -File | Select-Object Name
-$PY -c "import pandas as pd; a=pd.read_csv('reports/legacy/v1.1.1/equity.csv',parse_dates=['ts']).set_index('ts'); b=pd.read_csv('reports/equity.csv',parse_dates=['ts']).set_index('ts'); print((a['nav']-b['nav']).abs().max())"
+& $env:PY -c "import pandas as pd; a=pd.read_csv('reports/legacy/v1.1.1/equity.csv',parse_dates=['ts']).set_index('ts'); b=pd.read_csv('reports/equity.csv',parse_dates=['ts']).set_index('ts'); print((a['nav']-b['nav']).abs().max())"
 ```
 
 预期：测试全绿；目录含 9 类产物；`nav` 差值 `0.0`。
