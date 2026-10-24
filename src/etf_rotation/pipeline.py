@@ -675,9 +675,12 @@ def compute_benchmark(params: dict, start: str, end: str) -> pd.DataFrame:
     """等权持有可投资风险池（每日再平衡）与沪深300 的归一化净值。
 
     公式：
-      bench_ret_t = mean_{i ∈ 合格风险池} r_{i,t}      —— 每日再平衡等权
-      bench_ret_t ← bench_ret_{t−1}                    —— .shift(1)，对齐策略的 T 日持仓 / T+1 计收益
+      bench_ret_t = mean_{i ∈ 合格风险池} r_{i,t}      —— 每日再平衡等权（同日收益）
       nav_t = Π_{s≤t}(1 + r_s)                         —— 净值累乘
+
+    日期语义：t 日净值已包含 t 日收益，不再额外 shift。
+    首日收益置零：策略 T 日建仓、首日无收益；基准首日同样置零，
+    避免超额收益出现虚假首日项。
     """
     close, _, amt = load_prices()
     indices = load_indices()
@@ -696,12 +699,14 @@ def compute_benchmark(params: dict, start: str, end: str) -> pd.DataFrame:
     )
     r_risk = ret[risk].where(elig, np.nan)
     bench_ret = r_risk.mean(axis=1, skipna=True).reindex(days).fillna(0.0)
-    bench_ret = bench_ret.shift(1).fillna(0.0)  # 对齐策略：T 日持仓、T+1 起计收益
+    if len(bench_ret):
+        bench_ret.iloc[0] = 0.0  # 策略首日建仓无收益，基准同步置零
     bench_nav = (1 + bench_ret).cumprod()
 
     hs = indices.get("000300.SH")
     hs_ret = hs.reindex(days).pct_change(fill_method=None).fillna(0.0)
-    hs_ret = hs_ret.shift(1).fillna(0.0)
+    if len(hs_ret):
+        hs_ret.iloc[0] = 0.0
     hs_nav = (1 + hs_ret).cumprod()
     return pd.DataFrame({"benchmark": bench_nav, "hs300": hs_nav}, index=days)
 
