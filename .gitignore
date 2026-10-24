@@ -31,6 +31,10 @@ reports/data_quality.json
 reports/exposure.json
 reports/oos_check.json
 reports/signals/
+reports/derived/
+reports/legacy/**
+!reports/legacy/README.md
+!reports/legacy/old-runs.txt
 
 # OS
 .DS_Store
