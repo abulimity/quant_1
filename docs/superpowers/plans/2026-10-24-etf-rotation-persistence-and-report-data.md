@@ -99,11 +99,12 @@ con.execute(f"CREATE VIEW runs AS SELECT * FROM read_parquet({literal}, union_by
 
 ### 1.6 信号缓存
 
-- `data/cache/signals/{signal_id}/`，每个字段一个 parquet（float32 + zstd），另加 `scalars.parquet` 与 `manifest.json`。
-- 写入必须原子：先写 `{signal_id}.tmp-{pid}/`，校验后 `os.rename` 成正式目录；已存在且 manifest 一致则直接复用。这样多个并行会话/进程不会读到半成品。
+- `data/cache/signals/{signal_id}/`（锚在 warehouse 同级，可用 `ETF_SIGNAL_CACHE_DIR` 覆盖），每个字段一个 parquet，另加 `scalars.parquet` 与 `manifest.json`。**dtype 原样保存，不降精度**：float32 会改变数值，违反「只允许 N1 一个数值改动」。
+- 写入必须原子：先写 `.tmp-{pid}-{rand}/`，校验后 `os.rename` 成正式目录；已存在且 manifest 一致则直接复用，内容不一致则报错不覆盖。这样多个并行会话/进程不会读到半成品，也不会互相污染。
+- manifest 记 `price_hash`（价格面板指纹）：合成数据或换数据目录撞了同一 `signal_id` 时按未命中处理。
 - 落盘字段：`m21`、`m60`、`vol60`、`zbias`、`rev_active`、`llt80` + `regime`/`comp`/`nas_mom`/`gold_mom`/`nas_vol`/`gold_vol`/`cyb_*` 标量列。
 - 明确声明为「派生、不落盘」：`close`、`ret`、`n_days`、`avg20`（可由 warehouse 廉价重算）。
-- 默认开启，`--no-signal-cache` 或 `ETF_SIGNAL_CACHE=off` 关闭。
+- `ETF_SIGNAL_CACHE=off` 只关闭**读取**（强制重算，用于计时与校验），算完仍写盘供下次热跑；不设置或其它值表示读写都启用。测试进程默认不写共享缓存（除非显式设 `ETF_SIGNAL_CACHE_DIR`）。
 
 ---
 
@@ -1406,8 +1407,9 @@ git commit -m "feat(report): 成交滑点与容量估算"
 
 **Interfaces:**
 - Consumes: `cache.signal_id(params, data_snapshot_id)`（Task 2 已实现）。
+- Produces: `cache.SIGNAL_KEYS`（tuple，信号参数白名单的唯一来源；`pipeline.signal_cache_key` 直接用它，不得复制第二份）。
 - Produces: `cache.PANEL_FIELDS = ("m21", "m60", "vol60", "zbias", "llt80", "rev_active")`、`cache.SCALAR_FIELDS = ("comp", "nas_mom", "gold_mom", "nas_vol", "gold_vol", "cyb_vol", "cyb_below", "cyb_drop")`。
-- Produces: `cache.save(panels: dict, scalars: pd.DataFrame, sid: str, root: Path, meta: dict) -> Path`、`cache.load(sid: str, root: Path) -> dict | None`。
+- Produces: `cache.save(panels: dict, scalars: pd.DataFrame, sid: str, root: Path, meta: dict) -> Path`、`cache.load(sid: str, root: Path, *, price_hash: str) -> dict | None`、`cache.cache_root() -> Path`。
 - Produces: `_precompute_signals` 命中缓存时跳过 `momentum_panel`/`llt`，并补齐 `close/ret/n_days/avg20` 四个派生字段。
 
 - [ ] **Step 1: 写失败测试**
@@ -1466,7 +1468,7 @@ git commit -m "feat(signals): 信号面板内容寻址缓存"
 
 **Interfaces:**
 - Produces: `registry.family_id(kind, spec: dict, base_params: dict, start, end, execution, git_sha, data_snapshot_id, campaign_id: str = "") -> str`。
-- Produces: `registry.write_family_member(root, fid, run_id, variant: dict, campaign_id: str = "") -> None`（写 `families/{fid}/members/{run_id}.json`，一个成员一个文件，无共享写）。
+- Produces: `registry.write_family_member(root, fid, run_id, variant: dict, campaign_id: str = "", family: dict | None = None) -> None`（写 `families/{fid}/members/{run_id}.json`；`family={"kind":..., "spec":...}` 用于生成 `family.json`，不传则 `load_family` 的 `kind=None/spec={}`）。
 - Produces: `registry.load_family(root, fid) -> dict`（`fid, kind, spec, members[], n_trials`）。
 - Produces: `overfitting.campaign_trials(root, campaign_id) -> int`。
 

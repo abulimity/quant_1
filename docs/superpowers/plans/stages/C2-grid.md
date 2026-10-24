@@ -26,7 +26,7 @@ tests/test_sweep.py
 ## 消费契约
 
 - `artifacts.store_run / resolve_run`（S0a）
-- `registry.run_identity / family_id / write_family_member / load_family`（S0a + C1）
+- `registry.run_identity / family_id / write_family_member / load_family`（S0a + C1）；`write_family_member` 要传 `family={"kind": "grid", "spec": grid}`，否则 `load_family` 拿不到 kind/spec。
 - `overfitting.campaign_trials / deflated_sharpe`（C1）
 
 ## 产出契约（C3 依赖）

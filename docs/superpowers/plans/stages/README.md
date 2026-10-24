@@ -27,6 +27,7 @@
 全量 `& $env:PY -m pytest tests -q` 由编排者在每个波次合并后统一跑，子会话不要重复跑（一次约 10 分钟，多路并发会互相拖慢）。
 
 - `reports/` 在 worktree 内独立；`data/` 通过 `ETF_*` 变量指向主仓库，**只读**。
+- worktree 里**没有** `data/` 目录（被 gitignore）：查缓存/数据路径一律用 Python（`cache.cache_root()`、`paths.WAREHOUSE`），不要写相对路径 `data/...`。
 - `activate_data.ps1` 会把主仓库的 `reports/legacy/v1.1.1/` 拷进当前 worktree，供「策略数值不变」的对照；缺了对照就先重跑一次脚本。
 - `data/cache/signals/` 跨 worktree 共享，写入是 `tmp-{pid}` + rename；**不要手工清理**。
 - worktree 只 checkout 已提交内容；编排者先提交主计划与本目录，再建 worktree。

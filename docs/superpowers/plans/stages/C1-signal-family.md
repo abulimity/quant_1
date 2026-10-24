@@ -24,10 +24,11 @@ tests/test_families.py
 ## 产出契约
 
 - `cache.signal_id(params, data_snapshot_id)`（S0a 已有，本 stage 不要改语义）
-- `cache.save(panels, scalars, sid, root, meta)` / `cache.load(sid, root)`，原子写入 `tmp-{pid}` + rename
-- `data/cache/signals/{sid}/manifest.json`：`fields, dtypes, tickers, date_min, date_max, bytes, created_at, code_hash, data_snapshot_id`
+- `cache.SIGNAL_KEYS`（信号参数白名单的唯一来源；`pipeline.signal_cache_key` 直接复用，不得复制第二份）
+- `cache.save(panels, scalars, sid, root, meta)` / `cache.load(sid, root, *, price_hash=...)`，原子写入 `tmp-{pid}-{rand}` + rename；`cache.cache_root()` 锚在 warehouse 同级
+- `data/cache/signals/{sid}/manifest.json`：`fields, dtypes, tickers, date_min, date_max, bytes, created_at, code_hash, data_snapshot_id, price_hash`
 - `registry.family_id(kind, spec, base_params, start, end, execution, git_sha, data_snapshot_id, campaign_id="")`
-- `registry.write_family_member(root, fid, run_id, variant, campaign_id="")`、`registry.load_family(root, fid)`
+- `registry.write_family_member(root, fid, run_id, variant, campaign_id="", family=None)`、`registry.load_family(root, fid)`
 - `overfitting.campaign_trials(root, campaign_id)`
 
 ## 验收
@@ -39,7 +40,7 @@ tests/test_families.py
 # 冷→热耗时（同一命令跑两次）
 $env:ETF_SIGNAL_CACHE="off"; Measure-Command { & $env:PY scripts\run_backtest.py 2019-01-01 2026-07-31 }
 Measure-Command { & $env:PY scripts\run_backtest.py 2019-01-01 2026-07-31 }
-Get-ChildItem data\cache\signals
+& $env:PY -c "from etf_rotation.signals import cache; print(cache.cache_root()); print(sorted(p.name for p in cache.cache_root().iterdir()))"
 ```
 
 预期：测试全绿；第二次快 ≥ 4 分钟；两次 `equity.nav` 完全一致；只生成一个 `signal_id` 目录；目录里没有 `.tmp-*`。
