@@ -89,3 +89,40 @@ def test_run_identity_dimensioned():
         assert registry.run_identity(p, **kw2) != id1, field
     # 参数本身变化 → id 变化
     assert registry.run_identity({"x": 2, "y": {"z": 2}}, **kw) != id1
+
+
+def _git(cwd, *args):
+    """在临时仓库里执行 git 命令（关掉全局配置，避免机器差异影响测试）。"""
+    import os
+    import subprocess
+    env = {**os.environ, "HOME": str(cwd), "USERPROFILE": str(cwd),
+           "GIT_CONFIG_NOSYSTEM": "1"}
+    subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True,
+                   text=True, env=env)
+
+
+def test_git_info_ignores_generated_dirs(tmp_path, monkeypatch):
+    """回测镜像会改写已被跟踪的 reports/metrics.json；这不得改变 dirty_hash。
+
+    这是确定性要求的核心：同一 commit + 同参数重跑，run_id 必须不变。
+    """
+    (tmp_path / "reports").mkdir()
+    (tmp_path / "src").mkdir()
+    (tmp_path / "reports" / "metrics.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "src" / "a.py").write_text("x = 1\n", encoding="utf-8")
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "-c", "user.name=t", "-c", "user.email=t@example.com",
+         "-c", "commit.gpgsign=false", "commit", "-qm", "init")
+    monkeypatch.setattr(registry, "ROOT", tmp_path)
+
+    assert registry.git_info()[1] == ""
+    # 回测自己改写 reports/ 下的已跟踪产物 → 仍视为干净
+    (tmp_path / "reports" / "metrics.json").write_text('{"sharpe": 1}', encoding="utf-8")
+    assert registry.git_info()[1] == ""
+    # 源码改动 → 必须变脏，且不同改动得到不同哈希
+    (tmp_path / "src" / "a.py").write_text("x = 2\n", encoding="utf-8")
+    dirty = registry.git_info()[1]
+    assert dirty != ""
+    (tmp_path / "src" / "a.py").write_text("x = 3\n", encoding="utf-8")
+    assert registry.git_info()[1] != dirty

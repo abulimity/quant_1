@@ -37,6 +37,11 @@ STAGING_DIR = RUNS_DIR / ".staging"
 _REQUIREMENTS = ROOT / "requirements.txt"
 _ENV_PACKAGES = ("bt", "pandas", "numpy", "duckdb", "pyarrow", "ffn")
 
+# dirty_hash 的排除目录：本流程自己会写的产物（reports/、data/）。
+# 不排除会形成反馈回路：run_backtest 镜像覆盖 reports/metrics.json → git diff 变
+# → dirty_hash 变 → 同一个回测第二次跑出新的 run_id，内容寻址失效。
+_DIRTY_EXCLUDES = ("reports", "data")
+
 # 一条产物记录：name 是逻辑名（equity/trades/…），path 是 run 目录内的相对路径
 ArtifactInfo = namedtuple("ArtifactInfo", "name path sha256 bytes rows cols")
 
@@ -75,19 +80,23 @@ def git_info() -> tuple[str, str]:
     """返回 `(sha, dirty_hash)`：干净工作区 `dirty_hash` 为空串。
 
     公式：dirty_hash = sha256(git diff 输出)[:8]（仅当工作区有**已跟踪文件**改动）
-    纪律：`git status` 加 `--untracked-files=no`。data/、reports/ 全是 git 忽略或
-    运行期产物，若把未跟踪文件算进「脏」，每次跑完回测都会得到新的 run_id，
-    内容寻址就失效了（同一代码 + 同一参数必须同 id）。
+    纪律：
+    - `git status` 加 `--untracked-files=no`：data/、reports/ 里的新增文件是运行期
+      产物，不能算「脏」，否则每次跑完回测都会得到新的 run_id。
+    - diff 排除 `reports/`、`data/`：这两个目录里的**已跟踪**文件
+      （如基线 `reports/metrics.json`）会被回测镜像覆盖，若计入指纹，同一份代码 +
+      同一组参数重跑就会得到新 run_id —— 违反「内容寻址必须确定」。
     """
     sha = git_sha()
+    spec = [".", *[f":(exclude){p}" for p in _DIRTY_EXCLUDES]]
     try:
         status = subprocess.check_output(
-            ["git", "status", "--porcelain", "--untracked-files=no"],
+            ["git", "status", "--porcelain", "--untracked-files=no", "--", *spec],
             text=True, cwd=ROOT, stderr=subprocess.DEVNULL).strip()
         if not status:
             return sha, ""
         diff = subprocess.check_output(
-            ["git", "diff"], cwd=ROOT, stderr=subprocess.DEVNULL)
+            ["git", "diff", "--", *spec], cwd=ROOT, stderr=subprocess.DEVNULL)
     except Exception:
         # git 不可用（源码包/容器内）：无法判定脏，按干净处理，dirty_hash 留空
         return sha, ""
