@@ -42,6 +42,12 @@ reports/sensitivity/
 reports/legacy/**
 !reports/legacy/README.md
 !reports/legacy/old-runs.txt
+!reports/legacy/pre-remediation/
+reports/legacy/pre-remediation/runs/
+reports/legacy/pre-remediation/families/
+!reports/legacy/pre-remediation/README.md
+!reports/legacy/pre-remediation/old-run-ids.txt
+!reports/legacy/pre-remediation/old-family-ids.txt
 
 # OS
 .DS_Store
