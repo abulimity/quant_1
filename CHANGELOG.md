@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased · feat: 回测/网格持久化 v2 + 报告派生数据
+
+- 回测产物按 run 落盘：`reports/runs/{run_id}/`（`meta/metrics/artifacts` + parquet 产物），新增 `--save-profile minimal|standard|full`（默认 standard）；`reports/latest.json` 指向最新 run，顶层保留兼容镜像。
+- 三级内容寻址：`data_snapshot_id`（bronze + warehouse 表指纹）、`signal_id`（信号代码 + 参数 + 数据）、`run_id`（参数 + 代码 + 数据 + 执行口径 + signal_id）。`dirty_hash` 排除 `reports/`、`data/`，同一份代码重跑得到同一 `run_id`。
+- 登记层从共享 duckdb 改为 parquet + DuckDB 只读查询，并行回测不再撞写锁；新增 family/trial 与 campaign 级 DSR（分母只计 grid/ablation/assumption）。
+- 信号面板缓存 `data/cache/signals/{signal_id}/`：冷 10m00s → 热 4m36s；dtype 原样保存、原子写入、`price_hash` 防串。
+- 7 个网格/消融/假设/OOS/成本脚本统一走 `store_run`，`collect_runs.py` 生成 family summary；`--keys` 支持假设敏感性分块执行。
+- 报告派生层：`etf_rotation.report`（context/serialize/runner + 10 个 step）与 `scripts/build_report_data.py`，输出绑定 `run_id` 与输入 sha256；下游 `run_attribution/exposure/report` 支持 `--run-id`。
+- 修 `compute_benchmark` 双重 `shift(1)`（lag 峰值回到 0、首日置零）；修 `build_equity_frame` 把 bt bootstrap 日并入索引导致 equity 首行 `nav=NaN`。
+- 校验与清理：`verify_artifacts.py`（哈希 + 费用对账 + derived 溯源）、`prune_runs.py`（默认 dry-run）。
+- 测试：249 passed。
+
 ## Unreleased · docs
 
 - 全仓代码补充中文注释：`src/etf_rotation/**`（39 个文件）+ `scripts/**`（15 个文件），tests 不动。

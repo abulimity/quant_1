@@ -35,7 +35,7 @@ $env:PYTHONIOENCODING="utf-8"
 .venv\Scripts\python.exe -m pytest tests -q
 ```
 
-顺序：先 `run_backtest.py` 产出净值/权重/基准，再 `run_sensitivity.py` 做成本敏感性，最后 `run_report.py` 生成交互式报告与交易明细。
+顺序：先 `run_backtest.py` 产出净值/权重/基准（按 `reports/runs/{run_id}/` 落盘，档位 `--save-profile` 默认 standard、出报告用 full），再 `run_sensitivity.py` 做成本敏感性，最后 `run_report.py` 生成交互式报告与交易明细。报告派生数据用 `scripts/build_report_data.py --latest` 生成到 `reports/derived/`，可用 `scripts/verify_artifacts.py` 校验产物完整性。
 
 ## 架构
 

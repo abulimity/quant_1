@@ -82,7 +82,13 @@ ml4t-transaction-costs、ml4t-registry-system、ml4t-canonical-schema
 - 复现假设 H1–H10 与「已知简化」见 `reports/回测报告.md` 与
   `docs/superpowers/specs/2026-10-10-etf-rotation-design.md`
 - 机制（整组迟滞 / T+1 开盘+跳空+停牌 / 组合 34% 目标波动 / 单 ETF 过热退出）已接入主线；
-  默认执行口径仍为 close（T+1 收盘近似），open 口径已实现待设默认（见下阶段计划）
+  默认执行口径为 open（`OpenRebalance`），`--execution close` 可回退
+- 回测产物按 `reports/runs/{run_id}/` 保存：`--save-profile` 默认 standard，
+  出报告需要 full；`reports/latest.json` 指向最新 run，`reports/derived/` 是其派生数据
+- `data/cache/signals/{signal_id}/` 是跨 worktree 复用的信号缓存（默认读写，
+  `ETF_SIGNAL_CACHE=off` 只关读取）；不要手工清理，写盘是原子的
+- 产物完整性用 `scripts/verify_artifacts.py` 校验；`scripts/activate_data.ps1`
+  供 worktree 复用主仓库的 data/ 与 .venv
 
 ## 纪律与验收
 - 滚动统计量一律 `.shift(1)`；T 日信号、T+1 成交；禁止未来信息
