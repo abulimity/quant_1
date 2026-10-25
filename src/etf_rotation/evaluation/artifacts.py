@@ -17,6 +17,7 @@
 """
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import math
@@ -77,6 +78,46 @@ def _sha256(path: Path) -> str:
         for chunk in iter(lambda: f.read(1 << 20), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+@contextlib.contextmanager
+def _run_lock(path: Path, timeout: float = 30.0):
+    """针对单个 run_id 的排它写锁：`os.open(O_CREAT|O_EXCL)` 原子抢锁。
+
+    为什么需要：Hydra 出现重复候选值时两个进程会算到同一个 `run_id`，
+    「每个 run 只写自己的目录」不成立——它们写的是**同一个**目录。锁覆盖
+    整个 store_run 的暂存→改名/合并段，保证同一 run_id 串行写入。
+    残留锁（mtime > 600s）视为上次进程被杀，主动清除；超时抛 TimeoutError。
+    """
+    import time
+
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            fd = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            try:
+                stale = time.time() - path.stat().st_mtime > 600
+            except OSError:
+                stale = False
+            if stale:
+                path.unlink(missing_ok=True)
+                continue
+            if time.monotonic() >= deadline:
+                raise TimeoutError(f"获取 run 写锁超时：{path}")
+            time.sleep(0.05)
+            continue
+        try:
+            os.write(fd, str(os.getpid()).encode("ascii"))
+        finally:
+            os.close(fd)
+        break
+    try:
+        yield
+    finally:
+        path.unlink(missing_ok=True)
 
 
 def write_frames(directory: Path, names: list[str], frames: dict[str, pd.DataFrame]) -> None:
@@ -207,40 +248,42 @@ def store_run(*, root: Path, run_id: str, kind: str, profile: str, meta: dict,
     names = [name for name in SAVE_PROFILES[profile] if name in frames]
     staging = root / ".staging" / run_id
     final = root / run_id
-    try:
-        # 残留的暂存目录（上次进程被杀）直接丢弃，避免把旧文件混进本次产物
-        if staging.exists():
-            shutil.rmtree(staging)
-        staging.mkdir(parents=True)
+    lock_path = root / ".staging" / f"{run_id}.lock"
+    with _run_lock(lock_path):
+        try:
+            # 残留的暂存目录（上次进程被杀）直接丢弃，避免把旧文件混进本次产物
+            if staging.exists():
+                shutil.rmtree(staging)
+            staging.mkdir(parents=True)
 
-        write_frames(staging, names, frames)
-        infos = [registry.ArtifactInfo(
-            name=name, path=FILENAMES[name], sha256=_sha256(staging / FILENAMES[name]),
-            bytes=(staging / FILENAMES[name]).stat().st_size,
-            rows=int(len(frames[name])), cols=int(frames[name].shape[1]),
-        ) for name in names]
+            write_frames(staging, names, frames)
+            infos = [registry.ArtifactInfo(
+                name=name, path=FILENAMES[name], sha256=_sha256(staging / FILENAMES[name]),
+                bytes=(staging / FILENAMES[name]).stat().st_size,
+                rows=int(len(frames[name])), cols=int(frames[name].shape[1]),
+            ) for name in names]
 
-        row_meta = dict(meta)
-        row_meta["kind"] = kind
-        row_meta["run_id"] = run_id
-        row_meta["save_profile"] = profile
-        row_meta.setdefault("created_at", datetime.now(timezone.utc).isoformat())
-        registry.write_run(staging.parent, run_id, row_meta, metrics, infos)
+            row_meta = dict(meta)
+            row_meta["kind"] = kind
+            row_meta["run_id"] = run_id
+            row_meta["save_profile"] = profile
+            row_meta.setdefault("created_at", datetime.now(timezone.utc).isoformat())
+            registry.write_run(staging.parent, run_id, row_meta, metrics, infos)
 
-        if not final.exists():
-            _append_attempt(staging, run_id, profile, "created")
-            # 原子改名：读者要么看到完整目录，要么看不到（不会读到半个 run）
-            os.rename(staging, final)
+            if not final.exists():
+                _append_attempt(staging, run_id, profile, "created")
+                # 原子改名：读者要么看到完整目录，要么看不到（不会读到半个 run）
+                os.rename(staging, final)
+                return final
+
+            # 已存在：先比对再补写；attempts 在合并成功后才落到正式目录
+            _append_attempt(staging, run_id, profile, "upgraded")
+            _merge_existing(staging, final, infos, metrics, row_meta, run_id, profile)
             return final
-
-        # 已存在：先比对再补写；attempts 在合并成功后才落到正式目录
-        _append_attempt(staging, run_id, profile, "upgraded")
-        _merge_existing(staging, final, infos, metrics, row_meta, run_id, profile)
-        return final
-    except Exception:
-        # 任何失败（含冲突）都清掉暂存，磁盘上不留半成品
-        shutil.rmtree(staging, ignore_errors=True)
-        raise
+        except Exception:
+            # 任何失败（含冲突）都清掉暂存，磁盘上不留半成品
+            shutil.rmtree(staging, ignore_errors=True)
+            raise
 
 
 def latest_run_id(root: Path) -> str | None:

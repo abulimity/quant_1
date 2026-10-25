@@ -140,3 +140,16 @@ def test_latest_run_id_reads_and_tolerates_bad_json(tmp_path):
     assert artifacts.latest_run_id(tmp_path / "runs") == "abc"
     (tmp_path / "latest.json").write_text("not-json", encoding="utf-8")
     assert artifacts.latest_run_id(tmp_path / "runs") is None
+
+
+def test_concurrent_same_run_id_is_serialized(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+
+    def call(_):
+        return _store(tmp_path, "standard")
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        paths = list(pool.map(call, range(2)))
+    assert len({p for p in paths}) == 1
+    assert (tmp_path / "runs" / "r1" / "attempts.jsonl").read_text(encoding="utf-8").count("\n") == 2
+    assert not list((tmp_path / "runs" / ".staging").glob("*.lock"))
