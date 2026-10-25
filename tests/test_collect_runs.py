@@ -83,3 +83,51 @@ def test_search_pool_skips_family_with_dirty_member_run(tmp_path):
     _member(fams, "fc", "cleanrun")
     sharpes, _ = collect_runs.search_pool(fams, runs, "c1")
     assert sharpes == [0.8]
+
+
+def test_render_index_lists_families_and_missing():
+    rows = [{"family_id": "f1", "kind": "grid", "campaign_id": "c1",
+             "n_trials": 3, "n_campaign_trials": 43, "dsr_family": 0.99,
+             "dsr_campaign": 0.98, "best_sharpe": 1.0, "git_dirty": False,
+             "missing_members": []},
+            {"family_id": "f2", "kind": "cost", "campaign_id": "c1",
+             "n_trials": 4, "n_campaign_trials": 43, "dsr_family": None,
+             "dsr_campaign": None, "best_sharpe": 0.9, "git_dirty": True,
+             "missing_members": ["gone"]}]
+    text = collect_runs.render_index(rows, "2026-10-25T00:00:00+00:00")
+    assert "| family_id |" in text
+    assert "f1" in text and "f2" in text
+    assert "43" in text
+    assert "gone" in text
+    assert "dirty" in text.lower()
+
+
+def test_index_rows_reports_missing_member(tmp_path):
+    runs, fams = tmp_path / "runs", tmp_path / "families"
+    _run(runs, "present", 0.9)
+    _member(fams, "f1", "present")
+    _member(fams, "f1", "absent")
+    rows = collect_runs.index_rows(fams, runs)
+    assert len(rows) == 1
+    assert rows[0]["missing_members"] == ["absent"]
+    assert rows[0]["n_trials"] == 2
+
+
+def test_write_index_writes_markdown(tmp_path):
+    runs, fams = tmp_path / "runs", tmp_path / "families"
+    _run(runs, "m1", 0.9)
+    _member(fams, "f1", "m1")
+    out = collect_runs.write_index(fams, runs, tmp_path / "index.md")
+    assert out.exists()
+    text = out.read_text(encoding="utf-8")
+    assert "f1" in text and "| family_id |" in text
+
+
+def test_index_rows_flags_member_dirty(tmp_path):
+    runs, fams = tmp_path / "runs", tmp_path / "families"
+    _run(runs, "d", 0.9)
+    pd.DataFrame({"n_obs": [100], "git_dirty": [True]}).to_parquet(
+        runs / "d" / "meta.parquet")
+    _member(fams, "f1", "d")
+    rows = collect_runs.index_rows(fams, runs)
+    assert rows[0]["git_dirty"] is True

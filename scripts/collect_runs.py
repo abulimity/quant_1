@@ -220,8 +220,111 @@ def families_for_campaign(families_root: Path, campaign_id: str) -> list[str]:
     return out
 
 
+def _read_summary(families_root: Path, fid: str) -> dict:
+    """读 `families/{fid}/summary.json`；缺失/损坏返回空 dict。"""
+    path = Path(families_root) / fid / "summary.json"
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def index_rows(families_root: Path, runs_root: Path,
+               campaign_id: str | None = None) -> list[dict]:
+    """每 family 一行索引：身份、trial 数、DSR、最优 Sharpe、脏标记、缺失成员。
+
+    `n_campaign_trials` / `dsr_*` 直接读 family_summary 写的 summary.json
+    （单一来源，不在索引里二次推导）；缺失成员按 run 目录是否可读判断。
+    """
+    families_root, runs_root = Path(families_root), Path(runs_root)
+    if not families_root.exists():
+        return []
+    rows: list[dict] = []
+    for fam_dir in sorted(p for p in families_root.glob("*")
+                          if p.is_dir() and (p / "family.json").exists()):
+        fam = registry.load_family(families_root, fam_dir.name)
+        cid = fam.get("campaign_id") or ""
+        if campaign_id is not None and cid != campaign_id:
+            continue
+        summary = _read_summary(families_root, fam_dir.name)
+        best = summary.get("best") or {}
+        member_metas = [_read_meta(runs_root / str(m["run_id"])) for m in fam["members"]]
+        member_dirty = any(m.get("git_dirty") for m in member_metas)
+        missing = [str(m["run_id"]) for m in fam["members"]
+                   if not (runs_root / str(m["run_id"]) / "meta.parquet").exists()]
+        rows.append({
+            "family_id": fam_dir.name,
+            "kind": fam.get("kind"),
+            "campaign_id": cid,
+            "n_trials": fam.get("n_trials", 0),
+            "n_campaign_trials": summary.get("n_campaign_trials"),
+            "dsr_family": summary.get("dsr_family"),
+            "dsr_campaign": summary.get("dsr_campaign"),
+            "best_sharpe": best.get("sharpe"),
+            "git_dirty": bool(fam.get("git_dirty", False)) or member_dirty,
+            "missing_members": missing,
+        })
+    return rows
+
+
+def _fmt(value) -> str:
+    """索引单元格的展示：None → —，float → 4 位小数，其余原样。"""
+    if value is None:
+        return "—"
+    if isinstance(value, float):
+        return f"{value:.4f}"
+    return str(value)
+
+
+def render_index(rows: list[dict], generated_at: str) -> str:
+    """把 index_rows 的结果渲染成 Markdown：口径说明 + 汇总表 + 缺失成员清单。"""
+    lines = [
+        "# 调参 campaign 索引",
+        "",
+        f"> 生成时间：{generated_at}。`n_campaign_trials` 为去重且排除脏工作区后的搜索 trial 数。",
+        "",
+        "| family_id | kind | campaign_id | n_trials | n_campaign_trials | "
+        "dsr_family | dsr_campaign | best_sharpe | dirty |",
+        "|---|---|---|---|---|---|---|---|---|",
+    ]
+    for row in rows:
+        dirty = "⚠ dirty" if row.get("git_dirty") else ""
+        lines.append("| " + " | ".join([
+            str(row.get("family_id")), str(row.get("kind") or ""),
+            str(row.get("campaign_id") or ""), str(row.get("n_trials", 0)),
+            _fmt(row.get("n_campaign_trials")), _fmt(row.get("dsr_family")),
+            _fmt(row.get("dsr_campaign")), _fmt(row.get("best_sharpe")), dirty,
+        ]) + " |")
+    lines.append("")
+    lines.append("## 缺失成员（run 目录不存在）")
+    lines.append("")
+    missing = [(r["family_id"], m) for r in rows for m in r.get("missing_members", [])]
+    if missing:
+        for fid, rid in missing:
+            lines.append(f"- {fid}: `{rid}`")
+    else:
+        lines.append("无")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def write_index(families_root: Path, runs_root: Path, path: Path,
+                campaign_id: str | None = None) -> Path:
+    """生成 `reports/index.md`（原子写：同目录临时文件 + `os.replace`）。"""
+    rows = index_rows(families_root, runs_root, campaign_id)
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    text = render_index(rows, datetime.now(timezone.utc).isoformat())
+    tmp = path.with_name(f".{path.name}.tmp-{os.getpid()}")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, path)
+    return path
+
+
 def main() -> None:
-    """CLI：`--family <fid>` 或 `--campaign <cid>`，逐个生成 summary.json。"""
+    """CLI：`--family <fid>` 或 `--campaign <cid>`，逐个生成 summary.json，并写 index.md。"""
     parser = argparse.ArgumentParser(description="汇总 family 成员为 summary.json（单进程）")
     parser.add_argument("--family", action="append", default=[],
                         help="family_id，可重复")
@@ -229,6 +332,9 @@ def main() -> None:
                         help="campaign_id，汇总该 campaign 下全部 family")
     parser.add_argument("--runs-root", default=str(ROOT / "reports" / "runs"))
     parser.add_argument("--families-root", default=str(ROOT / "reports" / "families"))
+    parser.add_argument("--index-path", default=str(ROOT / "reports" / "index.md"),
+                        help="索引输出路径（默认 reports/index.md）")
+    parser.add_argument("--no-index", action="store_true", help="不生成 index.md")
     args = parser.parse_args()
 
     fids = list(args.family)
@@ -248,6 +354,11 @@ def main() -> None:
             "dsr_campaign": summary["dsr_campaign"],
             "summary": str(Path(args.families_root) / fid / "summary.json"),
         }, ensure_ascii=False, indent=2))
+
+    if not args.no_index:
+        index_path = write_index(Path(args.families_root), Path(args.runs_root),
+                                 Path(args.index_path))
+        print(f"index: {index_path}")
 
 
 if __name__ == "__main__":
