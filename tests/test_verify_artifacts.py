@@ -245,3 +245,43 @@ def test_verify_allows_minimal_profile_without_artifacts(tmp_path):
     """minimal 档只有 meta/metrics/manifest：没有产物记录是契约，不是缺失。"""
     _store(tmp_path, run_id="min", profile="minimal")
     assert verify.verify(tmp_path / "runs") == []
+
+
+# ── verify_reports：mirror 与 latest 一致 ────────────────────────────────
+
+def test_verify_reports_detects_stale_mirror(tmp_path):
+    p = _store(tmp_path)
+    (tmp_path / "latest.json").write_text('{"run_id": "r1"}', encoding="utf-8")
+    _write_index(p, _artifact_hashes(p), run_id="r1")
+    mirror = tmp_path / "derived"
+    mirror.mkdir()
+    (mirror / "index.json").write_text((p / "derived/index.json").read_text(encoding="utf-8"))
+    assert verify.verify_reports(tmp_path) == []
+    (mirror / "stale_step.json").write_text("{}", encoding="utf-8")
+    assert any("mirror" in msg for msg in verify.verify_reports(tmp_path))
+
+
+def test_verify_reports_detects_mirror_run_id_mismatch(tmp_path):
+    p = _store(tmp_path)
+    (tmp_path / "latest.json").write_text('{"run_id": "r1"}', encoding="utf-8")
+    _write_index(p, _artifact_hashes(p), run_id="other")
+    mirror = tmp_path / "derived"
+    mirror.mkdir()
+    (mirror / "index.json").write_text((p / "derived/index.json").read_text(encoding="utf-8"))
+    problems = verify.verify_reports(tmp_path)
+    assert any("串台" in msg for msg in problems)
+
+
+# ── verify_families：成员身份一致性 ──────────────────────────────────────
+
+def test_verify_families_flags_missing_member_run(tmp_path):
+    from etf_rotation.evaluation import registry
+    registry.write_family_member(tmp_path / "families", "f1", "gone", {}, campaign_id="c1")
+    problems = verify.verify_families(tmp_path / "families", tmp_path / "runs")
+    assert any("gone" in msg for msg in problems)
+
+
+def test_has_errors_filters_warnings():
+    assert verify.has_errors(["WARN x"]) is False
+    assert verify.has_errors(["real problem"]) is True
+    assert verify.has_errors(["WARN x", "real"]) is True

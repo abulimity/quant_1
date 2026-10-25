@@ -19,27 +19,38 @@ RUNS_DIR = ROOT / "reports" / "runs"
 
 
 def main() -> None:
-    """薄 CLI：解析参数 → 调 `verify.verify` → 有问题就逐行打印并非零退出。"""
+    """薄 CLI：解析参数 → 校验 run + 顶层镜像 + family，逐行打印，有真错误才非零退出。
+
+    `WARN ` 前缀（证据纯度告警）打印但不阻塞；`--run-id` 给定时跳过顶层镜像校验
+    （镜像只属于 latest，指定单个 run 时不适用）。
+    """
     parser = argparse.ArgumentParser(description="校验 run 产物的哈希与跨文件一致性")
     parser.add_argument("--run-id", default=None,
                         help="只校验指定 run（默认校验 reports/runs 下全部 run）")
     parser.add_argument("--root", default=None,
                         help=f"登记根目录（默认 {RUNS_DIR}）")
+    parser.add_argument("--reports-dir", default=None,
+                        help=f"reports 根目录（默认 {ROOT / 'reports'}），校验 latest↔derived 镜像")
+    parser.add_argument("--families-root", default=None,
+                        help=f"family 根目录（默认 {ROOT / 'reports' / 'families'}）")
+    parser.add_argument("--campaign", default=None,
+                        help="只校验该 campaign 的 family（默认全部）")
     args = parser.parse_args()
 
     root = Path(args.root) if args.root else RUNS_DIR
+    reports_dir = Path(args.reports_dir) if args.reports_dir else ROOT / "reports"
+    families_root = (Path(args.families_root) if args.families_root
+                     else ROOT / "reports" / "families")
+
+    problems: list[str] = []
+    problems.extend(verify.verify(root, args.run_id))
     if args.run_id is None:
-        legacy = [p for p in Path(root).glob("*")
-                  if p.is_dir() and not p.name.startswith(".")
-                  and not (p / "meta.parquet").exists()
-                  and not (p / "artifacts.parquet").exists()]
-        if legacy:
-            print(f"跳过 {len(legacy)} 个 pre-v2 run（无 meta.parquet，待 Task 23 清理）",
-                  file=sys.stderr)
-    problems = verify.verify(root, args.run_id)
+        problems.extend(verify.verify_reports(reports_dir))
+    problems.extend(verify.verify_families(families_root, root, args.campaign))
+
     for message in problems:
         print(message)
-    if problems:
+    if verify.has_errors(problems):
         sys.exit(1)
 
 
