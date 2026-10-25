@@ -11,7 +11,7 @@
     overheat    —— `n_overheat_exits > 0`（当日有标的被单 ETF 过热规则清零）
     vol_cap     —— `vol_cap_scale < 1`（组合波动触顶，按比例缩放仓位）
     defensive   —— `n_defensive` 相对前一日发生变化
-    cross_asset —— 纳指/黄金腿权重相对前一日发生变化
+    cross_asset —— 纳指/黄金腿权重相对前一日变化 ≥1pp（低于此视为每日波动缩放噪声）
 
 `hysteresis_held` 不再单独定义 switch：五相位平滑下它几乎每天为 False（「候选
 得分 > 旧组合得分」），把它当换仓会让每个交易日都成为事件。它只保留在
@@ -47,6 +47,10 @@ _DW_TOL = 1e-9
 _HELD_TOL = 0.005
 # 核心持仓口径：在达标标的里按权重取前 N 名；只有前 N 名更替才算换仓
 _TOP_N = 3
+# 跨资产腿（纳指/黄金）的「有变化」阈值：1 个百分点。
+# 两者都按 EWMA 波动每日缩放，任何微小变化都算事件会让 cross_asset 淹没事件表
+# （实测 981/1838 天）；1pp 阈值下约 290 天。
+_CROSS_TOL = 0.01
 # vol_cap_scale 小于该值才视为缩放（1.0 与 0.9999999999 不是同一个事件）
 _SCALE_TOL = 1e-9
 # 事后收益窗口（交易日）
@@ -105,7 +109,7 @@ def _event_masks(diary: pd.DataFrame, weights: pd.DataFrame) -> pd.DataFrame:
 
     nas = _change(_series(d, "nasdaq_weight", 0.0)).abs()
     gold = _change(_series(d, "gold_weight", 0.0)).abs()
-    cross_asset = (nas > _DW_TOL) | (gold > _DW_TOL)
+    cross_asset = (nas >= _CROSS_TOL) | (gold >= _CROSS_TOL)
 
     masks = pd.DataFrame({
         "switch": switch,

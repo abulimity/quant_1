@@ -1029,14 +1029,14 @@ def test_events_capture_switch_and_overheat():
 
 - [ ] **Step 3: 实现**
 
-判定：`switch` = **核心持仓变化**（在 `w ≥ 0.5%` 的标的里按权重取前 3 名，前 3 名集合与前一交易日不同；`hysteresis_held` 只作为触发快照保留在 `triggers` 里）。为什么不是全持仓集合：实测全集合变化有 935–1310 天（占 1838 天的 51%–71%），等于「每天都在换仓」；top-3 是 297 天，符合报告「核心持仓轮动」的语义。`n_overheat_exits > 0 → overheat`；`vol_cap_scale < 1 → vol_cap`；`n_defensive` 变化 → defensive；纳指/黄金权重变化 → cross_asset。`top_changes` 取 `|Δw|` 前 3；`turnover = Σ|Δw|/2`；`fwd_5d/fwd_20d = Π(1+r_{t+1..t+n}) − 1`，尾部不足给 `None`。
+判定：`switch` = **核心持仓变化**（在 `w ≥ 0.5%` 的标的里按权重取前 3 名，前 3 名集合与前一交易日不同；`hysteresis_held` 只作为触发快照保留在 `triggers` 里）。为什么不是全持仓集合：实测全集合变化有 935–1310 天（占 1838 天的 51%–71%），等于「每天都在换仓」；top-3 是 287 天，符合报告「核心持仓轮动」的语义。`n_overheat_exits > 0 → overheat`；`vol_cap_scale < 1 → vol_cap`；`n_defensive` 变化 → defensive；**纳指/黄金权重相对前一日变化 ≥1pp → cross_asset**（低于 1pp 是每日波动缩放噪声：任何变化有 981 天，1pp 后约 290 天）。`top_changes` 取 `|Δw|` 前 3；`turnover = Σ|Δw|/2`；`fwd_5d/fwd_20d = Π(1+r_{t+1..t+n}) − 1`，尾部不足给 `None`。
 
 - [ ] **Step 4: 跑测试确认通过** → PASS
 
 - [ ] **Step 5: 真实数据**
 
 Run: `.venv\Scripts\python.exe scripts\build_report_data.py --only events`
-Expected: 事件数 300–800（若 `switch` 换成「持仓集合变化」后仍显著超出，把 `n_by_type` 分布贴回来，不要靠调阈值硬凑）；`overheat` 天数与 `diary.n_overheat_exits > 0` 的天数一致；同一持仓集合连续多日不重复计 switch。
+Expected: 事件数 300–800（当前口径实测 519：switch 287 / cross_asset 290 / overheat 39 / vol_cap 3 / defensive 1）；`overheat` 天数与 `diary.n_overheat_exits > 0` 的天数一致；同一核心持仓组合连续多日不重复计 switch。
 
 - [ ] **Step 6: 提交**
 

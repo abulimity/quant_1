@@ -150,3 +150,12 @@ def test_types_are_deterministically_ordered():
     weights = pd.DataFrame({"A": [0.5, 0.0], "B": [0.5, 1.0]}, index=idx)
     ev = events.rebalance_events(diary, weights, pd.Series(0.0, index=idx))
     assert ev.iloc[0]["types"] == ["switch", "overheat", "vol_cap", "defensive", "cross_asset"]
+
+
+def test_cross_asset_ignores_sub_one_percent_drift():
+    """纳指/黄金按 EWMA 每日缩放，<1pp 的漂移不算事件（否则 cross_asset 淹没事件表）。"""
+    idx = pd.date_range("2024-01-01", periods=3, freq="B")
+    diary = _diary(idx, nasdaq_weight=[0.10, 0.105, 0.10], gold_weight=[0.0, 0.0, 0.0])
+    weights = pd.DataFrame({"A": 0.5, "B": 0.5}, index=idx)
+    ev = events.rebalance_events(diary, weights, pd.Series(0.0, index=idx))
+    assert ev.empty
