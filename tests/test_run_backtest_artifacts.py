@@ -45,3 +45,20 @@ def test_equity_frame_has_turnover_and_fees():
     assert list(out.columns) == ["nav", "returns", "cash", "turnover", "fees"]
     assert out.index.equals(idx)
     assert out["nav"].iloc[-1] == 1.01
+
+
+def test_equity_frame_drops_bootstrap_turnover_row():
+    """bt 的 turnover 带一行 bootstrap 日；equity 必须以 nav 为索引，不能取并集。
+
+    否则 equity 首行是 nav=NaN，下游 nav.index[0]、滚动统计都会被污染。
+    """
+    idx = pd.to_datetime(["2024-01-02", "2024-01-03"])
+    wider = pd.to_datetime(["2024-01-01", "2024-01-02", "2024-01-03"])
+    nav = pd.Series([1.0, 1.01], index=idx)
+    turnover = pd.Series([0.0, 0.0, 0.1], index=wider)
+    out = metrics.build_equity_frame(nav, nav.pct_change().fillna(0.0),
+                                     pd.Series(0.1, index=idx), turnover,
+                                     pd.Series(0.0, index=idx))
+    assert out.index.equals(idx)
+    assert out["nav"].notna().all()
+    assert out["turnover"].tolist() == [0.0, 0.1]

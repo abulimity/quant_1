@@ -72,11 +72,16 @@ def build_equity_frame(nav: pd.Series, returns: pd.Series, cash: pd.Series,
     五列全部与 bt 引擎同源：nav 为归一化净值、returns 为日收益、cash 为现金余额、
     turnover 为日换手、fees 为当日费用。派生层（水下曲线/成本/换手）只依赖
     equity 而不回读引擎，因此列集合必须稳定 —— 缺列即 schema 不兼容。
+
+    索引以 `nav` 为唯一基准：bt 的 `turnover` 带一行 bootstrap 日
+    （净值序列的 t0-1），直接拼 DataFrame 会取并集，让 equity 首行变成
+    `nav=NaN` 的空行——下游 `nav.index[0]`、滚动统计都会被这行污染。
     """
+    index = pd.DatetimeIndex(nav.index)
     return pd.DataFrame({
         "nav": nav,
-        "returns": returns,
-        "cash": cash,
-        "turnover": turnover,
-        "fees": fees,
-    })
+        "returns": returns.reindex(index),
+        "cash": cash.reindex(index),
+        "turnover": turnover.reindex(index),
+        "fees": fees.reindex(index),
+    }, index=index)
