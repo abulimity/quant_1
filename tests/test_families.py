@@ -45,6 +45,17 @@ def test_campaign_trials_dedupes_same_run_across_families(tmp_path):
     assert overfitting.campaign_trials(tmp_path, "c1") == 2
 
 
+def test_family_records_dirty_state(tmp_path):
+    fid = _fid()
+    registry.write_family_member(
+        tmp_path, fid, "r0", {}, campaign_id="c1",
+        family={"kind": "grid", "spec": {"x": [1]}, "git_dirty": True,
+                "dirty_hash": "abc12345"})
+    fam = registry.load_family(tmp_path, fid)
+    assert fam["git_dirty"] is True
+    assert fam["dirty_hash"] == "abc12345"
+
+
 def test_family_id_is_deterministic_and_order_independent():
     a = registry.family_id("grid", {"x": [1, 2], "y": [3]}, {"b": 1, "a": 2},
                            "2024-01-01", "2024-12-31", "open", "abc", "d1", "c1")

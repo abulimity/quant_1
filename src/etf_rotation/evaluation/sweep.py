@@ -106,7 +106,8 @@ def finite_metrics(metrics: dict) -> tuple[dict, list[str]]:
 def run_sweep(*, points, run_one, kind: str, profile: str, campaign_id: str,
               tag: str, runs_root: Path, families_root: Path, git_sha: str,
               data_snapshot_id: str, start: str, end: str, execution: str,
-              spec: dict | None = None, base_params: dict | None = None) -> dict:
+              spec: dict | None = None, base_params: dict | None = None,
+              dirty_hash: str = "") -> dict:
     """逐点执行 sweep 并落盘，返回
     `{"family_id", "n_trials", "run_ids", "trials"}`。
 
@@ -138,6 +139,7 @@ def run_sweep(*, points, run_one, kind: str, profile: str, campaign_id: str,
         "kind": kind, "spec": spec, "start": start, "end": end,
         "execution": execution, "git_sha": git_sha,
         "data_snapshot_id": data_snapshot_id, "campaign_id": campaign_id,
+        "git_dirty": bool(dirty_hash), "dirty_hash": dirty_hash,
     }
 
     run_ids: list[str] = []

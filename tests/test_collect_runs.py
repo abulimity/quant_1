@@ -60,3 +60,26 @@ def test_search_pool_ignores_non_search_kinds(tmp_path):
     _member(fams, "fg", "grid1", kind="grid")
     sharpes, _ = collect_runs.search_pool(fams, runs, "c1")
     assert sharpes == [0.7]
+
+
+def test_search_pool_skips_dirty_family(tmp_path):
+    runs, fams = tmp_path / "runs", tmp_path / "families"
+    _run(runs, "dirty1", 0.9)
+    _member(fams, "fd", "dirty1", family_extra={"git_dirty": True, "dirty_hash": "h"})
+    _run(runs, "clean1", 0.8)
+    _member(fams, "fc", "clean1", family_extra={"git_dirty": False})
+    sharpes, _ = collect_runs.search_pool(fams, runs, "c1")
+    assert sharpes == [0.8]
+
+
+def test_search_pool_skips_family_with_dirty_member_run(tmp_path):
+    runs, fams = tmp_path / "runs", tmp_path / "families"
+    _run(runs, "dirtyrun", 0.9)
+    # 成员 run 的 meta 标 dirty，但 family.json 没标（当前线上状态）
+    pd.DataFrame({"n_obs": [100], "git_dirty": [True]}).to_parquet(
+        runs / "dirtyrun" / "meta.parquet")
+    _member(fams, "fd", "dirtyrun")
+    _run(runs, "cleanrun", 0.8)
+    _member(fams, "fc", "cleanrun")
+    sharpes, _ = collect_runs.search_pool(fams, runs, "c1")
+    assert sharpes == [0.8]

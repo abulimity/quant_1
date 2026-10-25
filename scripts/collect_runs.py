@@ -97,7 +97,13 @@ def search_pool(families_root: Path, runs_root: Path, campaign_id: str) -> tuple
             continue
         if fam.get("kind") not in ("grid", "ablation", "assumption"):
             continue
-        for member in fam["members"]:
+        if fam.get("git_dirty"):
+            continue
+        member_metas = [_read_meta(Path(runs_root) / str(m["run_id"]))
+                        for m in fam["members"]]
+        if any(m.get("git_dirty") for m in member_metas):
+            continue
+        for member, meta in zip(fam["members"], member_metas):
             run_id = str(member["run_id"])
             if run_id in seen:
                 continue
@@ -106,7 +112,6 @@ def search_pool(families_root: Path, runs_root: Path, campaign_id: str) -> tuple
             metrics = _read_metrics(run_dir)
             if "sharpe" in metrics:
                 sharpes.append(float(metrics["sharpe"]))
-            meta = _read_meta(run_dir)
             if meta.get("n_obs") is not None:
                 nobs.append(int(meta["n_obs"]))
     return sharpes, (max(nobs) if nobs else None)

@@ -381,7 +381,7 @@ def write_family_member(root: Path, fid: str, run_id: str, variant: dict,
                 meta = {}
         meta.setdefault("family_id", fid)
         for key in ("kind", "spec", "start", "end", "execution", "git_sha",
-                    "data_snapshot_id", "campaign_id"):
+                    "data_snapshot_id", "campaign_id", "git_dirty", "dirty_hash"):
             value = family.get(key)
             if value is not None and key not in meta:
                 meta[key] = _json_safe(value)
@@ -428,4 +428,8 @@ def load_family(root: Path, fid: str) -> dict:
         "members": members,
         "n_trials": len(members),
         "created_at": meta.get("created_at"),
+        "git_sha": meta.get("git_sha"),
+        "data_snapshot_id": meta.get("data_snapshot_id"),
+        "git_dirty": bool(meta.get("git_dirty")),
+        "dirty_hash": meta.get("dirty_hash", ""),
     }

@@ -109,7 +109,8 @@ def _run_one(p: dict, cfg: DictConfig, ctx: dict, *, gsha: str, dirty_hash: str,
         family={"kind": "grid", "spec": {cfg.param_key: values},
                 "start": start, "end": end, "execution": execution,
                 "git_sha": gsha, "data_snapshot_id": data_snap,
-                "campaign_id": campaign},
+                "campaign_id": campaign,
+                "git_dirty": bool(dirty_hash), "dirty_hash": dirty_hash},
     )
     return {"run_id": run_id, "family_id": fid, **{k: s[k] for k in
             ("ann_return", "sharpe", "max_drawdown", "calmar")}}
