@@ -35,6 +35,11 @@ def main() -> None:
     if args.run_id and args.latest:
         parser.error("--run-id 与 --latest 只能选一个")
 
+    # 允许 `--only a,b,c` 与 `--only a b c` 两种写法：文档与验收命令混用过，
+    # 不拆分会把 "a,b,c" 当成一个未知 step 名。
+    if args.only:
+        args.only = [name for value in args.only for name in value.split(",") if name]
+
     from etf_rotation.evaluation import artifacts
     from etf_rotation.report import runner
     from etf_rotation.report.context import ReportContext

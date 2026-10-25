@@ -1014,28 +1014,29 @@ from etf_rotation.report.steps import events
 def test_events_capture_switch_and_overheat():
     idx = pd.date_range("2024-01-01", periods=4, freq="B")
     diary = pd.DataFrame({"regime": ["bull"] * 4,
-                          "hysteresis_held": [True, False, True, True],
+                          "hysteresis_held": [True, True, True, True],
                           "n_overheat_exits": [0, 0, 1, 0],
                           "vol_cap_scale": [1.0, 1.0, 1.0, 0.9],
                           "n_defensive": [2, 2, 2, 2]}, index=idx)
-    weights = pd.DataFrame({"A": [0.6, 0.4, 0.0, 0.2], "B": [0.4, 0.6, 1.0, 0.8]}, index=idx)
+    # 01-02 持仓集合 {A,B} → 01-03 {B}（A 归零）= switch；01-04 仍 {B}
+    weights = pd.DataFrame({"A": [0.6, 0.0, 0.0, 0.2], "B": [0.4, 1.0, 1.0, 0.8]}, index=idx)
     ev = events.rebalance_events(diary, weights, pd.Series(0.001, index=idx))
     assert {"switch", "overheat", "vol_cap"} <= set(ev["types"].explode())
-    assert ev.loc[ev["date"] == "2024-01-02", "types"].iloc[0] == ["switch"]
+    assert ev.loc[ev["date"] == "2024-01-03", "types"].iloc[0] == ["switch"]
 ```
 
 - [ ] **Step 2: 跑测试确认失败** → FAIL
 
 - [ ] **Step 3: 实现**
 
-判定：`hysteresis_held == False → switch`；`n_overheat_exits > 0 → overheat`；`vol_cap_scale < 1 → vol_cap`；`n_defensive` 变化 → defensive；纳指/黄金权重变化 → cross_asset。`top_changes` 取 `|Δw|` 前 3；`turnover = Σ|Δw|/2`；`fwd_5d/fwd_20d = Π(1+r_{t+1..t+n}) − 1`，尾部不足给 `None`。
+判定：`switch` = **持仓集合变化**（`{w_t ≥ 0.5%}` 与前一交易日不同；`hysteresis_held` 只作为触发快照保留在 `triggers` 里，不再单独定义事件，因为五相位平滑下它几乎每天为 False，会把事件表淹没）；`n_overheat_exits > 0 → overheat`；`vol_cap_scale < 1 → vol_cap`；`n_defensive` 变化 → defensive；纳指/黄金权重变化 → cross_asset。`top_changes` 取 `|Δw|` 前 3；`turnover = Σ|Δw|/2`；`fwd_5d/fwd_20d = Π(1+r_{t+1..t+n}) − 1`，尾部不足给 `None`。
 
 - [ ] **Step 4: 跑测试确认通过** → PASS
 
 - [ ] **Step 5: 真实数据**
 
 Run: `.venv\Scripts\python.exe scripts\build_report_data.py --only events`
-Expected: 事件数 300–800；`overheat` 天数与 `diary.n_overheat_exits > 0` 的天数一致。
+Expected: 事件数 300–800（若 `switch` 换成「持仓集合变化」后仍显著超出，把 `n_by_type` 分布贴回来，不要靠调阈值硬凑）；`overheat` 天数与 `diary.n_overheat_exits > 0` 的天数一致；同一持仓集合连续多日不重复计 switch。
 
 - [ ] **Step 6: 提交**
 
@@ -1148,7 +1149,7 @@ def test_turnover_split_sums_to_total():
 - [ ] **Step 5: 真实数据**
 
 Run: `.venv\Scripts\python.exe scripts\build_report_data.py --only execution`
-Expected: `mean_abs` 中位数 < 0.5%，最大 < 10%。
+Expected: `mean_abs` 中位数 < 0.5%；最大值允许 > 10%，但必须能定位到停牌/跳空顺延（提交说明里给出最差 3 天的标的与原因）。
 
 - [ ] **Step 6: 提交**
 
@@ -1328,7 +1329,7 @@ def test_extreme_days_returns_both_tails():
 - [ ] **Step 5: 真实数据**
 
 Run: `.venv\Scripts\python.exe scripts\build_report_data.py --only extremes`
-Expected: `|residual|` 中位数 < 5bp、最大 < 50bp；若超出，先在 `reports/derived/index.json` 记 warning，不静默丢弃。
+Expected: `|residual|` 中位数 < 20bp、最大 < 100bp（open 执行下隔夜跳空只能用前一日权重归因，天然带残差）；超出时在 `extremes.json` 写 warnings，不静默丢弃。
 
 - [ ] **Step 6: 提交**
 
