@@ -1,50 +1,84 @@
-"""生成回测可视化（自包含 HTML + 交易明细 CSV）并更新回测报告。"""
+"""生成回测可视化（自包含 HTML + 交易明细 CSV）并更新回测报告。
+
+用法：
+    python scripts/run_report.py                 # 取 reports/latest.json 指向的 run
+    python scripts/run_report.py --run-id 1a2b3c4d5e6f
+
+读：`reports/runs/{run_id}/` 下的 equity/metrics/weights/benchmark/
+trades/signals（需要 full 档；档位不足时报错并打印重跑命令，不静默降级）。
+写：`reports/可视化报告.html`（顶层，保持既有链接）并把同一份拷进
+`reports/runs/{run_id}/analysis/`；`reports/回测报告.md` 的自动段落一并更新。
+
+`reports/sensitivity.json` 由 `run_sensitivity.py`（成本敏感性扫描）产出，
+不属于单个 run 的档位产物，因此仍从顶层读取。
+"""
 from __future__ import annotations
 
+import argparse
 import json
+import shutil
 import sys
 from pathlib import Path
 
 import pandas as pd
 
 from etf_rotation import __version__, config
-from etf_rotation.evaluation import plots
 from etf_rotation.pipeline import load_fund_basic, market_regime
 from etf_rotation.data import universe as univ
+from etf_rotation.evaluation import artifacts, plots
 
 ROOT = Path(__file__).resolve().parents[1]
 REPORTS = ROOT / "reports"
+RUNS = REPORTS / "runs"
 REPORT = REPORTS / "回测报告.md"
 M_START = "<!-- VIS:AUTO -->"
 M_END = "<!-- /VIS:AUTO -->"
 
 
-def main() -> None:
-    """汇总 run_backtest 的产物，生成自包含 HTML 可视化报告并回写回测报告。
+def _read_metrics(run_dir: Path) -> dict[str, float]:
+    """metrics.parquet（长表 metric→value）→ dict（与 ReportContext 同一口径）。"""
+    df = pd.read_parquet(run_dir / "metrics.parquet")
+    return {str(m): float(v) for m, v in zip(df["metric"], df["value"])}
 
-    只读 run 产物与其顶层镜像（equity/metrics/sensitivity/weights/benchmark/
-    transactions/trades）；交易明细由 run_backtest 的 full 档产出，本脚本不再写
+
+def main() -> None:
+    """汇总 run 的产物，生成自包含 HTML 可视化报告并回写回测报告。
+
+    只读 run 目录下的产物；交易明细由 run_backtest 的 full 档产出，本脚本不再写
     trades.csv。档位不足时报错并打印重跑命令，不静默降级。
     """
-    latest_path = REPORTS / "latest.json"
-    if latest_path.exists():
-        latest = json.loads(latest_path.read_text(encoding="utf-8"))
-        if latest.get("profile") != "full":
-            sys.exit(
-                f"最新 run {latest.get('run_id')} 的档位是 {latest.get('profile')}，"
-                f"报告需要 full 档，请重跑：scripts\\run_backtest.py --save-profile full")
+    parser = argparse.ArgumentParser(description="生成回测可视化报告")
+    parser.add_argument("--run-id", default=None,
+                        help="指定 run_id（默认读 reports/latest.json）")
+    args = parser.parse_args()
+
+    try:
+        run_dir = artifacts.resolve_run(RUNS, args.run_id)
+    except FileNotFoundError as exc:
+        print(f"错误：{exc}", file=sys.stderr)
+        sys.exit(1)
+
+    profile = str(pd.read_parquet(run_dir / "meta.parquet").iloc[0]["save_profile"])
+    if profile != "full":
+        sys.exit(
+            f"run {run_dir.name} 的档位是 {profile}，报告需要 full 档，"
+            f"请重跑：scripts\\run_backtest.py --save-profile full")
     params = config.load_params()
-    # 读取 run_backtest 的产物（equity / metrics / sensitivity / weights / benchmark）
-    equity = pd.read_csv(REPORTS / "equity.csv", parse_dates=["ts"]).set_index("ts")
+    # 读取 run 产物（equity / metrics / weights / benchmark / trades）
+    equity = pd.read_parquet(run_dir / "equity.parquet")
     nav = equity["nav"]
     returns = equity["returns"]
     # 现金占比 = 现金余额 / 净值（引擎的 cash 是绝对金额，除以 nav 才是权重口径）
     cash_weight = equity["cash"] / equity["nav"] if "cash" in equity.columns else None
-    metrics = json.loads((REPORTS / "metrics.json").read_text(encoding="utf-8"))
-    sens = json.loads((REPORTS / "sensitivity.json").read_text(encoding="utf-8"))
+    metrics = _read_metrics(run_dir)
+    sens_path = REPORTS / "sensitivity.json"
+    if not sens_path.exists():
+        sys.exit(f"{sens_path} 缺失：成本敏感性章节需要它，请先跑 "
+                 f"scripts\\run_sensitivity.py（该文件不属于单个 run 的档位产物）")
+    sens = json.loads(sens_path.read_text(encoding="utf-8"))
     sens_df = pd.DataFrame(sens["cost_sensitivity"])
-    weights = pd.read_parquet(REPORTS / "weights.parquet")
-    bench = pd.read_csv(REPORTS / "benchmark.csv", parse_dates=["ts"]).set_index("ts")
+    weights = pd.read_parquet(run_dir / "weights.parquet")
+    bench = pd.read_parquet(run_dir / "benchmark.parquet")
 
     fb = load_fund_basic()
     cat = univ.classify(fb)
@@ -74,9 +108,8 @@ def main() -> None:
         ("年化波动", f"{metrics['ann_vol']:.2%}"),
         ("日均换手", f"{metrics['turnover']:.2%}"),
     ]
-    # 交易明细（以引擎成交记录为唯一依据；trades.csv 由 run_backtest full 档镜像产出）
-    tx = pd.read_csv(REPORTS / "transactions.csv", parse_dates=["Date"]).set_index(["Date", "Security"])
-    t = pd.read_csv(REPORTS / "trades.csv", parse_dates=["date"])
+    # 交易明细（以引擎成交记录为唯一依据；trades.parquet 由 run_backtest full 档产出）
+    t = pd.read_parquet(run_dir / "trades.parquet")
 
     # 八个固定章节：每节 = (标题, 说明文字, plotly 图)
     sections = [
@@ -98,8 +131,9 @@ def main() -> None:
          plots.cost_sensitivity(sens_df)),
     ]
     # 信号/决策章节：观测层产物存在时追加，缺失则优雅降级
-    diary_path = REPORTS / "signals" / "decision_diary.parquet"
-    tk_path = REPORTS / "signals" / "ticker_signals.parquet"
+    signals = run_dir / "signals"
+    diary_path = signals / "decision_diary.parquet"
+    tk_path = signals / "ticker_signals.parquet"
     if diary_path.exists() and tk_path.exists():
         diary = pd.read_parquet(diary_path)
         tk = pd.read_parquet(tk_path)
@@ -115,18 +149,22 @@ def main() -> None:
         sections.append(("交易触发事件", "换仓、过热退出、波动上限缩放事件标记（信号 T 日 → 成交 T+1）。",
                          plots.trade_triggers(diary, t)))
     else:
-        print("WARNING: reports/signals/*.parquet 缺失，跳过「信号与决策」章节")
-    plots.write_report(sections, stats, REPORTS / "可视化报告.html",
+        print(f"WARNING: {signals}/*.parquet 缺失，跳过「信号与决策」章节")
+    html = REPORTS / "可视化报告.html"
+    plots.write_report(sections, stats, html,
                        subtitle=f"{start} ~ {end} · 多资产 ETF 轮动策略 · v{__version__}")
+    # run 内留一份，报告内容与 run_id 绑定，便于回溯
+    analysis = run_dir / "analysis"
+    analysis.mkdir(exist_ok=True)
+    shutil.copy2(html, analysis / html.name)
 
-    _write_report(_build_md(metrics, t))
-    print(f"可视化报告.html written; report updated; {len(t)} trades")
+    _write_report(_build_md(metrics, t, run_dir.name))
+    print(f"可视化报告.html written; report updated; {len(t)} trades (run {run_dir.name})")
 
 
-def _build_md(metrics: dict, t: pd.DataFrame) -> str:
-    """生成回测报告中的自动可视化段落（含指标与交易摘要）。"""
-    # 合计成本以引擎 fees 为准（run_backtest 落进 metrics.json）；
-    # 兼容旧 metrics.json：缺 total_fees 时回退到逐笔估算合计。
+def _build_md(metrics: dict, t: pd.DataFrame, run_id: str) -> str:
+    """生成回测报告中的自动可视化段落（含 run_id、指标与交易摘要）。"""
+    # 合计成本以引擎 fees 为准（run_backtest 落进 metrics）；缺 total_fees 时回退逐笔估算
     fees = metrics.get("total_fees", float(t["cost"].sum()))
     heatmap_lines = []
     for p in sorted(REPORTS.glob("heatmap_*.html")):
@@ -138,6 +176,7 @@ def _build_md(metrics: dict, t: pd.DataFrame) -> str:
         "",
         "## 可视化（自动生成）",
         "",
+        f"- 对应 run：`{run_id}`（产物 `reports/runs/{run_id}/`，档位 full）",
         "- [打开交互式可视化报告](可视化报告.html)（自包含、离线可用）",
         f"- [交易明细 CSV](trades.csv)：共 {len(t)} 笔，买入 {(t['side'] == '买入').sum()} 笔 / "
         f"卖出 {(t['side'] == '卖出').sum()} 笔，合计成本 {fees:.4f}（引擎 fees 口径，"
@@ -166,4 +205,3 @@ def _write_report(section: str) -> None:
 
 if __name__ == "__main__":
     main()
-
