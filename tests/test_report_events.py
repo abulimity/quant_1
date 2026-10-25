@@ -2,8 +2,8 @@
 
 口径：
 - 事件判定只看 T 日决策日记与 T 日目标权重（信号日），成交在 T+1；
-- `switch` = **持仓集合变化**：`held_set_t = {ticker | w_t >= 0.005}`，
-  `held_set_t != held_set_{t−1}`；`hysteresis_held` 只保留在 `triggers` 快照里，
+- `switch` = **核心持仓集合变化**：先取 `w >= 0.005` 的标的，再按权重取前 3 名，
+  `top3_t != top3_{t−1}`；`hysteresis_held` 只保留在 `triggers` 快照里，
   不单独定义事件（五相位平滑下它几乎每天 False，直接当 switch 会让每天都是事件）；
 - `overheat` = 当日有标的被过热规则清零（`n_overheat_exits > 0`）；
 - `vol_cap` = 组合波动触顶缩放（`vol_cap_scale < 1`）；
@@ -70,6 +70,17 @@ def test_held_set_threshold_is_half_percent():
     assert len(ev) == 1
     assert ev.iloc[0]["date"] == idx[2]
     assert ev.iloc[0]["types"] == ["switch"]
+
+
+def test_rank_4_to_5_swap_is_not_switch():
+    idx = pd.date_range("2024-01-01", periods=2, freq="B")
+    diary = _diary(idx)
+    # 前 3 名 A/B/C 不变；D 与 E 只是第 4/5 名互换（且交替跌破 0.5%）
+    weights = pd.DataFrame({"A": [0.45, 0.45], "B": [0.30, 0.30], "C": [0.20, 0.20],
+                            "D": [0.046, 0.004], "E": [0.004, 0.046]}, index=idx)
+    ev = events.rebalance_events(diary, weights, pd.Series(0.0, index=idx))
+    assert ev.empty
+    assert events.event_dates(diary, weights).empty
 
 
 def test_event_dates_uses_same_rule_as_rebalance_events():
