@@ -1605,7 +1605,7 @@ git commit -m "feat(grid): 网格脚本统一按 run 落盘并登记 family"
 $env:PYTHONIOENCODING="utf-8"
 $dims = @(
  "dedupe.corr_threshold=0.75,0.80,0.85",
- "trend.windows=[15,60],[21,60],[30,90]",
+ "trend.windows=[[15,60],[21,60],[30,90]]",
  "dedupe.max_holdings=5,8,10",
  "market_state.bull_threshold=0.15,0.20,0.25",
  "market_state.alpha=0.05,0.10,0.15",
