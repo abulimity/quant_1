@@ -2,7 +2,9 @@
 
 口径：
 - 事件判定只看 T 日决策日记与 T 日目标权重（信号日），成交在 T+1；
-- `switch` = 整组迟滞未维持（`hysteresis_held == False`）；
+- `switch` = **持仓集合变化**：`held_set_t = {ticker | w_t >= 0.005}`，
+  `held_set_t != held_set_{t−1}`；`hysteresis_held` 只保留在 `triggers` 快照里，
+  不单独定义事件（五相位平滑下它几乎每天 False，直接当 switch 会让每天都是事件）；
 - `overheat` = 当日有标的被过热规则清零（`n_overheat_exits > 0`）；
 - `vol_cap` = 组合波动触顶缩放（`vol_cap_scale < 1`）；
 - `defensive` = 防守仓数量相对前一日发生变化（`n_defensive.diff() != 0`）；
@@ -42,17 +44,41 @@ def test_events_capture_switch_and_overheat():
                           "n_overheat_exits": [0, 0, 1, 0],
                           "vol_cap_scale": [1.0, 1.0, 1.0, 0.9],
                           "n_defensive": [2, 2, 2, 2]}, index=idx)
-    weights = pd.DataFrame({"A": [0.6, 0.4, 0.0, 0.2], "B": [0.4, 0.6, 1.0, 0.8]}, index=idx)
+    # 2024-01-03：A 从 0.4 归零、B 仍是 1.0 → 持仓集合 {A,B} → {B}，这才是 switch
+    weights = pd.DataFrame({"A": [0.6, 0.4, 0.0, 0.0], "B": [0.4, 0.6, 1.0, 1.0]}, index=idx)
     ev = events.rebalance_events(diary, weights, pd.Series(0.001, index=idx))
     assert {"switch", "overheat", "vol_cap"} <= set(ev["types"].explode())
-    assert ev.loc[ev["date"] == "2024-01-02", "types"].iloc[0] == ["switch"]
+    assert ev.loc[ev["date"] == "2024-01-03", "types"].iloc[0] == ["switch", "overheat"]
+
+
+def test_hysteresis_false_without_position_change_is_not_switch():
+    idx = pd.date_range("2024-01-01", periods=3, freq="B")
+    diary = _diary(idx, hysteresis_held=[True, False, False])
+    weights = pd.DataFrame({"A": 0.5, "B": 0.5}, index=idx)
+    ev = events.rebalance_events(diary, weights, pd.Series(0.0, index=idx))
+    assert ev.empty
+    assert events.event_dates(diary, weights).empty
+
+
+def test_held_set_threshold_is_half_percent():
+    idx = pd.date_range("2024-01-01", periods=3, freq="B")
+    diary = _diary(idx)
+    # B 从 0.4% → 0.49% 仍低于阈值（不算持有），0.5% 才进入集合
+    weights = pd.DataFrame({"A": [0.996, 0.9951, 0.995],
+                            "B": [0.004, 0.0049, 0.005]}, index=idx)
+    ev = events.rebalance_events(diary, weights, pd.Series(0.0, index=idx))
+    assert len(ev) == 1
+    assert ev.iloc[0]["date"] == idx[2]
+    assert ev.iloc[0]["types"] == ["switch"]
 
 
 def test_event_dates_uses_same_rule_as_rebalance_events():
     idx = pd.date_range("2024-01-01", periods=5, freq="B")
     diary = _diary(idx, hysteresis_held=[True, True, False, False, True],
                    n_overheat_exits=[0, 0, 0, 1, 0])
-    weights = pd.DataFrame({"A": 0.5, "B": 0.5}, index=idx)
+    # idx[2]：A 退出、B 仍持有 → switch；idx[3]：只有过热，无集合变化
+    weights = pd.DataFrame({"A": [0.5, 0.5, 0.0, 0.0, 0.0],
+                            "B": [0.5, 0.5, 1.0, 1.0, 1.0]}, index=idx)
     ev = events.rebalance_events(diary, weights, pd.Series(0.0, index=idx))
     dates = events.event_dates(diary, weights)
     assert isinstance(dates, pd.DatetimeIndex)
@@ -63,29 +89,31 @@ def test_event_dates_uses_same_rule_as_rebalance_events():
 def test_turnover_and_top_changes_use_previous_day():
     idx = pd.date_range("2024-01-01", periods=2, freq="B")
     diary = _diary(idx, hysteresis_held=[True, False])
-    weights = pd.DataFrame({"A": [0.5, 0.3], "B": [0.3, 0.4], "C": [0.2, 0.3]}, index=idx)
+    weights = pd.DataFrame({"A": [0.5, 0.0], "B": [0.3, 0.4], "C": [0.2, 0.6]}, index=idx)
     ev = events.rebalance_events(diary, weights, pd.Series(0.0, index=idx))
     row = ev.iloc[0]
-    assert row["turnover"] == pytest.approx(0.2)
-    assert [c["ticker"] for c in row["top_changes"]] == ["A", "B", "C"]
-    assert row["top_changes"][0]["delta"] == pytest.approx(-0.2)
+    assert row["turnover"] == pytest.approx(0.5)
+    assert [c["ticker"] for c in row["top_changes"]] == ["A", "C", "B"]
+    assert row["top_changes"][0]["delta"] == pytest.approx(-0.5)
 
 
 def test_first_day_has_no_change_so_no_turnover():
     idx = pd.date_range("2024-01-01", periods=2, freq="B")
-    diary = _diary(idx)
+    diary = _diary(idx, hysteresis_held=[False, False])
     weights = pd.DataFrame({"A": 0.5, "B": 0.5}, index=idx)
     ev = events.rebalance_events(diary, weights, pd.Series(0.0, index=idx))
-    assert ev.empty                      # 无任何触发 → 无事件行
+    assert ev.empty                      # 首日无前值，不算 switch
     assert events.event_dates(diary, weights).empty
 
 
 def test_forward_returns_are_ex_post_and_none_when_tail_short():
-    idx = pd.date_range("2024-01-01", periods=6, freq="B")
-    diary = _diary(idx, hysteresis_held=[False, True, True, False, True, True])
-    weights = pd.DataFrame({"A": 0.5, "B": 0.5}, index=idx)
-    returns = pd.Series([0.0, 0.01, 0.01, 0.01, 0.01, 0.01], index=idx)
+    idx = pd.date_range("2024-01-01", periods=8, freq="B")
+    diary = _diary(idx)
+    weights = pd.DataFrame({"A": [0.5, 0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 0.5],
+                            "B": [0.5, 1.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5]}, index=idx)
+    returns = pd.Series([0.0] + [0.01] * 7, index=idx)
     ev = events.rebalance_events(diary, weights, returns).reset_index(drop=True)
+    assert list(ev["date"]) == [idx[1], idx[4]]
 
     first, second = ev.iloc[0], ev.iloc[1]
     assert first["fwd_5d"] == pytest.approx((1.01 ** 5) - 1.0)
@@ -108,6 +136,6 @@ def test_types_are_deterministically_ordered():
     diary = _diary(idx, hysteresis_held=[True, False], n_overheat_exits=[0, 2],
                    vol_cap_scale=[1.0, 0.8], n_defensive=[2, 3],
                    nasdaq_weight=[0.1, 0.2], gold_weight=[0.1, 0.1])
-    weights = pd.DataFrame({"A": [0.5, 0.4], "B": [0.5, 0.6]}, index=idx)
+    weights = pd.DataFrame({"A": [0.5, 0.0], "B": [0.5, 1.0]}, index=idx)
     ev = events.rebalance_events(diary, weights, pd.Series(0.0, index=idx))
     assert ev.iloc[0]["types"] == ["switch", "overheat", "vol_cap", "defensive", "cross_asset"]

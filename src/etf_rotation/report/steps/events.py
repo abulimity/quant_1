@@ -3,11 +3,16 @@
 判定规则（唯一的判定入口是 `_event_masks`，`event_dates` 与 `rebalance_events`
 共用，禁止两处各写一套 —— S3 / Task 14 会直接调用 `event_dates`）：
 
-    switch      —— `hysteresis_held == False`（整组迟滞未维持，换仓）
+    switch      —— 持仓集合变化：`held_set_t = {ticker | w_{ticker,t} >= 0.005}`，
+                   `held_set_t != held_set_{t−1}` 即为换仓（首日无前值，不算 switch）
     overheat    —— `n_overheat_exits > 0`（当日有标的被单 ETF 过热规则清零）
     vol_cap     —— `vol_cap_scale < 1`（组合波动触顶，按比例缩放仓位）
     defensive   —— `n_defensive` 相对前一日发生变化
     cross_asset —— 纳指/黄金腿权重相对前一日发生变化
+
+`hysteresis_held` 不再单独定义 switch：五相位平滑下它几乎每天为 False（「候选
+得分 > 旧组合得分」），把它当换仓会让每个交易日都成为事件。它只保留在
+`triggers` 快照里供审阅；真正有经济含义的换仓是**持仓集合**发生变化。
 
 口径与索引语义：
 - 事件日期 = **信号日 T**（`diary` / 目标 `weights` 的索引），实际成交在 T+1；
@@ -35,6 +40,8 @@ TYPE_ORDER = ("switch", "overheat", "vol_cap", "defensive", "cross_asset")
 
 # 权重变化小于该值视为没动（浮点求和顺序会留下 ~1e-17 的噪声）
 _DW_TOL = 1e-9
+# 持仓集合的纳入阈值：权重 >= 0.5% 才算「持有」（低于此视为残渣仓位）
+_HELD_TOL = 0.005
 # vol_cap_scale 小于该值才视为缩放（1.0 与 0.9999999999 不是同一个事件）
 _SCALE_TOL = 1e-9
 # 事后收益窗口（交易日）
@@ -53,16 +60,30 @@ def _change(series: pd.Series) -> pd.Series:
     return pd.Series(series, index=series.index).astype("float64").diff()
 
 
+def _held_sets(weights: pd.DataFrame, index: pd.Index) -> pd.Series:
+    """逐日持仓集合 `{ticker | w >= 0.005}`（index = 事件日历，值为 frozenset）。"""
+    w = pd.DataFrame(weights).sort_index().astype("float64").reindex(index=index)
+    columns = np.asarray(w.columns, dtype=object)
+    values = w.to_numpy(dtype="float64")
+    sets = [frozenset(columns[row >= _HELD_TOL]) for row in values]
+    return pd.Series(sets, index=index, dtype=object)
+
+
 def _event_masks(diary: pd.DataFrame, weights: pd.DataFrame) -> pd.DataFrame:
     """逐日事件掩码（index = 信号日，columns = TYPE_ORDER）。唯一判定入口。
 
-    判定只读日记；`weights` 用于把事件日历锚定在「有目标权重」的交易日上
-    （两者交集），保证事件行的换手/前 3 变化都有对应权重可比。
+    `switch` 由目标权重面板的**持仓集合变化**判定；其余四类只读日记。
+    事件日历 = 日记与权重索引的交集，保证每条事件都有可比的前一日权重。
     """
     d = pd.DataFrame(diary).sort_index()
     w = pd.DataFrame(weights).sort_index()
+    index = d.index.intersection(w.index)
 
-    held = _series(d, "hysteresis_held", 1.0).fillna(1.0).astype(bool)
+    held_sets = _held_sets(w, index)
+    prev_sets = held_sets.shift(1)
+    # 首日没有前值（prev 为 NaN）不算 switch，与换手/defensive 的首日口径一致
+    switch = held_sets.ne(prev_sets) & prev_sets.notna()
+
     overheat = _series(d, "n_overheat_exits", 0.0).fillna(0.0) > 0.0
     vol_cap = _series(d, "vol_cap_scale", 1.0).fillna(1.0) < (1.0 - _SCALE_TOL)
     defensive = _change(_series(d, "n_defensive", 0.0)).abs() > 0.0
@@ -72,13 +93,13 @@ def _event_masks(diary: pd.DataFrame, weights: pd.DataFrame) -> pd.DataFrame:
     cross_asset = (nas > _DW_TOL) | (gold > _DW_TOL)
 
     masks = pd.DataFrame({
-        "switch": ~held,
+        "switch": switch,
         "overheat": overheat,
         "vol_cap": vol_cap,
         "defensive": defensive,
         "cross_asset": cross_asset,
     }, index=d.index)
-    masks = masks.reindex(index=d.index.intersection(w.index))
+    masks = masks.reindex(index=index)
     return masks.loc[:, list(TYPE_ORDER)].fillna(False).astype(bool)
 
 
