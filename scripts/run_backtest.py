@@ -84,6 +84,7 @@ def main() -> None:
     trade_rows = trades.build_trade_table_from_engine(
         res.result.get_transactions(), cost_bps=p["costs"]["one_side_bps"])
     diary, ticker_signals = observability.build_frames(build.days, build.traces, build.sig, p)
+    stages = observability.build_stages(build.traces, build.days)
     frames = {
         "equity": equity,
         "weights": weights,
@@ -93,6 +94,7 @@ def main() -> None:
         "trades": trade_rows,
         "diary": diary,
         "ticker_signals": ticker_signals,
+        "stages": stages,
     }
 
     # ⑥ 内容寻址：run_id = f(参数, 代码, 数据, 执行口径, 信号集)
