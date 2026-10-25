@@ -2071,3 +2071,14 @@ git commit -m "chore: 新登记体系验证通过后清理旧 run"
 - 文档已更新：`reports/回测报告.md`、`reports/调参记录.md`、`AGENTS.md`、`TODO.md`、`CHANGELOG.md`、`README.md`、`docs/代码审阅手册.md`、report spec §3.2。
 - 未跟踪文件：`docs/superpowers/specs/2026-10-25-...frontend*.md` 来自另一个设计会话，本次未触碰。
 - 待用户裁决：H1 `trend.weighting=exp` 与 H7 `nasdaq_exit_threshold=-0.05` 是否采纳为默认（会改变数值，需重立基线）。
+
+## 10. 审计整改结果（2026-10-25，第三方审计后）
+
+> 本节是 §9 之后的一轮独立整改。执行计划见 `docs/superpowers/plans/2026-10-25-etf-rotation-audit-remediation.md`。
+
+- **证据链去重**：campaign trial 按 `run_id` 去重（49 成员位 → 40 唯一搜索 trial）；`git_dirty` 纳入 `family.json` 并从 DSR 分母排除。
+- **派生镜像防串台**：`build_report_data --run-id <非 latest>` 不再镜像；镜像原子替换；`verify_reports` 校验 latest↔derived↔analysis。
+- **契约补强**：`performance.json` 加 `summary.max_drawdown` 并对账；`DERIVED_VERSION=2`；同 `run_id` 写锁；网格默认 `standard` 档并落 benchmark。
+- **计划尾巴**：`reports/index.md` 生成；成本敏感性绑定 cost family；heatmap 重跑；prune 真跑；确定性两跑。
+- **全量重建**：旧 52 run / 14 family 归档到 `reports/legacy/pre-remediation/`；campaign `tuning-2026-10` 在单一干净 commit `5016f25` 上重建，新基线 **`4b303fe538c2`**（净值与 v1.1.1 零差异、指标与旧基线逐项相等），45 run / 12 family，**`dsr_campaign = 0.9913`**，`verify_artifacts` 无 WARN/ERROR。
+- 本计划各 Task 复选框未逐项回填，完成状态以本节、§9 与整改计划的 ledger（`.superpowers/sdd/2026-10-25-etf-rotation-audit-remediation/progress.md`）为准。

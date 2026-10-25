@@ -12,6 +12,9 @@
 - [ ] H1-exp（指数时间权重）与 H7 纳指退出阈值 -0.05 是否采纳入默认：2026-10-25 campaign 重跑后，H1 exp（10.49% / -12.37% / 0.938 / 0.848）与 H7 -0.05（11.30% / -15.54% / 0.987 / 0.727）仍是最强候选，campaign DSR 0.9918、OOS 两段均正。由用户裁决；采纳属「改变数值」，须走 Part 1 流程。
 - [x] `env_lock_hash` 已填充（requirements + Python + 关键库版本，sha256[:12]）。
 - [x] `data_snapshot_id` 已改为 bronze 哈希 + `warehouse.manifest.json` 表指纹；curate 后生成清单，回测可 `verify_warehouse`。
+- [x] 证据链收口（2026-10-25 审计整改）：campaign trial 按 run_id 去重、脏 run 排除、派生镜像只跟随 latest、`reports/index.md` 生成、成本敏感性绑定 cost family、同 run 写锁；campaign `tuning-2026-10` 在干净 commit 上重建（基线 `4b303fe538c2`，DSR 0.9913）。
+- [ ] `snapshot.hash_files` 改相对路径排序：当前按完整路径排序、哈希只含 basename，换数据目录布局会换 `data_snapshot_id`；需先加 `snapshot_version` 再迁移（迁移会令全部现有 run 身份失效）。
+- [ ] `docs/superpowers/specs/2026-10-25-*frontend*.md` 与 `reports/front-design/`（另一会话的前端设计产物）决定提交或忽略。
 - [ ] `plots.market_state_timeline` 的 bear 阈值线硬编码 -0.30（实际 -0.35）。
 - [ ] `trade_triggers` 的「换仓」标记含 warmup/无持仓日（`held=False` 语义过宽）。
 - [ ] H5 `momentum_weight` 使 range 市 score 数值减半（权重不变，仅 `ticker_signals` 的 score 量级）。

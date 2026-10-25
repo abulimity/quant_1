@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased · fix: 审计整改（证据链 / 派生镜像 / 计划尾巴）
+
+- 证据链：campaign trial 按 `run_id` 去重（49 成员位 → 40 唯一搜索 trial）；`family.json` 记录 `git_dirty/dirty_hash`，脏工作区 run 与脏 family 移出 DSR 分母；`verify_families` 校验成员 git_sha/data_snapshot_id/execution 一致性并告警 equity 首行 NaN。
+- 派生镜像只跟随 latest：`build_report_data.py --mirror auto|always|never`，镜像原子替换、不残留旧 step；`verify_reports` 校验 latest ↔ derived ↔ analysis 身份。
+- `performance.json` 增加 `summary.max_drawdown` 并与 metrics 对账；`DERIVED_VERSION=2` 参与 `--only` 增量判断。
+- 同一 `run_id` 的写入加排它锁（`os.open(O_CREAT|O_EXCL)`），Hydra 重复候选值不再并发写坏目录。
+- `collect_runs.py` 生成 `reports/index.md`；`run_report.py` 成本敏感性改读 cost family（不再混用顶层 campaign 文件）。
+- 网格脚本默认 `--save-profile standard` 并落 `benchmark.parquet`。
+- 全量重跑：在干净 commit `5016f25` 上重建 campaign `tuning-2026-10`（基线 `4b303fe538c2`，45 run / 12 family），旧 52 run / 14 family 归档到 `reports/legacy/pre-remediation/`；净值与 v1.1.1 零差异。
+- 测试：273 passed。
+
 ## Unreleased · feat: 回测/网格持久化 v2 + 报告派生数据
 
 - 回测产物按 run 落盘：`reports/runs/{run_id}/`（`meta/metrics/artifacts` + parquet 产物），新增 `--save-profile minimal|standard|full`（默认 standard）；`reports/latest.json` 指向最新 run，顶层保留兼容镜像。

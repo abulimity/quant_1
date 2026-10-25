@@ -90,6 +90,18 @@ ml4t-transaction-costs、ml4t-registry-system、ml4t-canonical-schema
 - 产物完整性用 `scripts/verify_artifacts.py` 校验；`scripts/activate_data.ps1`
   供 worktree 复用主仓库的 data/ 与 .venv
 
+## 持久化与证据链（2026-10-25 审计整改后的纪律）
+- campaign 的 DSR 分母是**去重后的唯一 run_id**，且**排除 `git_dirty=TRUE` 的 run/family**；
+  改任何代码后重跑会因 `git_sha` 变化换 `run_id`，同一份结论必须冻结在同一 commit 上生成。
+- `build_report_data.py --run-id <非 latest>` 默认**不镜像**到 `reports/derived/`（`--mirror auto|always|never`）；
+  镜像必须是 latest 的函数，否则前端读到别的 run 的派生数据。
+- 证据型 run 必须在**干净工作区**生成；`git_dirty` 只存 hash 不存 diff，脏 run 不可复现。
+- 派生契约升级要 bump `runner.DERIVED_VERSION`，否则 `--only` 会用同 run 同 inputs 继承旧 schema 的 step。
+- 网格/成本/OOS/消融脚本都走 `sweep.run_sweep` + `store_run`；兼容镜像（`grid.json`、
+  `sensitivity_summary.json`）按维度 key 覆盖，**不是证据源**，证据只看 `reports/families/*/summary.json`。
+- 常见坑（避免重犯）：PowerShell 5.1 无 BOM `.ps1` 中文注释吞换行、`Get-Content` 默认 ANSI 读中文乱码；
+  worktree 不设 `PYTHONPATH` 会静默跑主仓库代码；读 `warehouse.duckdb` 必须 `read_only=True`；长任务用受管后台或前台分块。
+
 ## 纪律与验收
 - 滚动统计量一律 `.shift(1)`；T 日信号、T+1 成交；禁止未来信息
 - 与研报对标 20.74% / -10.13% / 2.05，目标是「同量级」而非精确复现，
