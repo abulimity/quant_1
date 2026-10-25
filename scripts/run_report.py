@@ -34,6 +34,9 @@ REPORT = REPORTS / "回测报告.md"
 M_START = "<!-- VIS:AUTO -->"
 M_END = "<!-- /VIS:AUTO -->"
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))   # scripts 不是包
+from collect_runs import cost_rows, latest_family  # noqa: E402
+
 
 def _read_metrics(run_dir: Path) -> dict[str, float]:
     """metrics.parquet（长表 metric→value）→ dict（与 ReportContext 同一口径）。"""
@@ -50,6 +53,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="生成回测可视化报告")
     parser.add_argument("--run-id", default=None,
                         help="指定 run_id（默认读 reports/latest.json）")
+    parser.add_argument("--sensitivity-family", default=None,
+                        help="成本敏感性取自哪个 cost family（默认取最新的 cost family）")
     args = parser.parse_args()
 
     try:
@@ -71,12 +76,21 @@ def main() -> None:
     # 现金占比 = 现金余额 / 净值（引擎的 cash 是绝对金额，除以 nav 才是权重口径）
     cash_weight = equity["cash"] / equity["nav"] if "cash" in equity.columns else None
     metrics = _read_metrics(run_dir)
-    sens_path = REPORTS / "sensitivity.json"
-    if not sens_path.exists():
-        sys.exit(f"{sens_path} 缺失：成本敏感性章节需要它，请先跑 "
-                 f"scripts\\run_sensitivity.py（该文件不属于单个 run 的档位产物）")
-    sens = json.loads(sens_path.read_text(encoding="utf-8"))
-    sens_df = pd.DataFrame(sens["cost_sensitivity"])
+    cost_fid = args.sensitivity_family or latest_family(REPORTS / "families", "cost")
+    if cost_fid:
+        sens_df = pd.DataFrame(cost_rows(REPORTS / "families", RUNS, cost_fid)
+                               ).rename(columns={"one_side_bps": "cost_bps"})
+        sens_source = f"cost family {cost_fid}"
+    else:
+        sens_path = REPORTS / "sensitivity.json"
+        if not sens_path.exists():
+            sys.exit(f"{sens_path} 缺失：成本敏感性章节需要它，请先跑 "
+                     f"scripts\\run_sensitivity.py（该文件不属于单个 run 的档位产物）")
+        sens = json.loads(sens_path.read_text(encoding="utf-8"))
+        sens_df = pd.DataFrame(sens["cost_sensitivity"])
+        sens_source = "顶层 sensitivity.json（未绑定 run）"
+        print("WARNING 成本敏感性来自顶层 campaign 文件（未绑定 run），"
+              "建议用 --sensitivity-family 指定 cost family", file=sys.stderr)
     weights = pd.read_parquet(run_dir / "weights.parquet")
     bench = pd.read_parquet(run_dir / "benchmark.parquet")
 
@@ -127,7 +141,7 @@ def main() -> None:
          plots.holdings_distribution(weights, label_map, cash=cash_weight)),
         ("收益分布", "日收益直方图叠加正态拟合，观察肥尾与偏度。",
          plots.return_distribution(returns)),
-        ("成本敏感性", "单边成本 0→24bp 时，年化收益、最大回撤与 Calmar 的衰减。",
+        ("成本敏感性", f"单边成本 0→24bp 时，年化收益、最大回撤与 Calmar 的衰减（来源：{sens_source}）。",
          plots.cost_sensitivity(sens_df)),
     ]
     # 信号/决策章节：观测层产物存在时追加，缺失则优雅降级

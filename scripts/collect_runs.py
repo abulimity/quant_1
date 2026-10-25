@@ -220,6 +220,50 @@ def families_for_campaign(families_root: Path, campaign_id: str) -> list[str]:
     return out
 
 
+def latest_family(families_root: Path, kind: str) -> str | None:
+    """返回 kind 匹配、`family.json.created_at` 最新的 family_id；无则 None。"""
+    families_root = Path(families_root)
+    best: str | None = None
+    best_ts = ""
+    for path in sorted(families_root.glob("*/family.json")):
+        try:
+            meta = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if meta.get("kind") != kind:
+            continue
+        ts = meta.get("created_at") or ""
+        if best is None or ts > best_ts:
+            best, best_ts = path.parent.name, ts
+    return best
+
+
+def cost_rows(families_root: Path, runs_root: Path, family_id: str) -> list[dict]:
+    """读成本 family 的成员 variant + metrics，按 `costs.one_side_bps` 升序返回。
+
+    供 `run_report.py` 用同一份 run 产物出成本敏感性图，替代顶层 `sensitivity.json`
+    （后者是 campaign 级文件，不绑定 run，可能混入别的 run 的成本曲线）。
+    """
+    families_root, runs_root = Path(families_root), Path(runs_root)
+    fam = registry.load_family(families_root, family_id)
+    rows: list[dict] = []
+    for member in fam["members"]:
+        rid = str(member["run_id"])
+        variant = member.get("variant") or {}
+        metrics = _read_metrics(runs_root / rid)
+        rows.append({
+            "one_side_bps": variant.get("costs.one_side_bps"),
+            "run_id": rid,
+            "sharpe": metrics.get("sharpe"),
+            "ann_return": metrics.get("ann_return"),
+            "max_drawdown": metrics.get("max_drawdown"),
+            "calmar": metrics.get("calmar"),
+            "total_fees": metrics.get("total_fees"),
+        })
+    rows.sort(key=lambda r: (r["one_side_bps"] is None, r["one_side_bps"]))
+    return rows
+
+
 def _read_summary(families_root: Path, fid: str) -> dict:
     """读 `families/{fid}/summary.json`；缺失/损坏返回空 dict。"""
     path = Path(families_root) / fid / "summary.json"

@@ -30,13 +30,14 @@ def _run(runs_root: Path, run_id: str, sharpe: float, n_obs: int = 100) -> Path:
 
 
 def _member(fams_root: Path, fid: str, rid: str, campaign: str = "c1",
-            kind: str = "grid", family_extra: dict | None = None) -> None:
+            kind: str = "grid", family_extra: dict | None = None,
+            variant: dict | None = None) -> None:
     """登记一个成员，并确保 family.json 存在（search_pool 只扫有 family.json 的目录）。"""
     family = {"kind": kind, "campaign_id": campaign}
     if family_extra:
         family.update(family_extra)
-    registry.write_family_member(fams_root, fid, rid, {}, campaign_id=campaign,
-                                 family=family)
+    registry.write_family_member(fams_root, fid, rid, variant or {},
+                                 campaign_id=campaign, family=family)
 
 
 def test_search_pool_dedupes_run_shared_by_two_families(tmp_path):
@@ -131,3 +132,15 @@ def test_index_rows_flags_member_dirty(tmp_path):
     _member(fams, "f1", "d")
     rows = collect_runs.index_rows(fams, runs)
     assert rows[0]["git_dirty"] is True
+
+
+def test_cost_rows_reads_family_members_sorted(tmp_path):
+    runs, fams = tmp_path / "runs", tmp_path / "families"
+    _run(runs, "c16", 0.5)
+    _run(runs, "c0", 1.0)
+    _member(fams, "fc", "c16", kind="cost", variant={"costs.one_side_bps": 16})
+    _member(fams, "fc", "c0", kind="cost", variant={"costs.one_side_bps": 0})
+    rows = collect_runs.cost_rows(fams, runs, "fc")
+    assert [r["one_side_bps"] for r in rows] == [0, 16]
+    assert rows[0]["run_id"] == "c0"
+    assert collect_runs.latest_family(fams, "cost") == "fc"
