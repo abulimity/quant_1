@@ -100,7 +100,7 @@ def main() -> None:
         families_root=ROOT / "reports" / "families",
         git_sha=gsha, data_snapshot_id=data_snap,
         start=args.start, end=args.end, execution=args.execution,
-        spec={"mechanisms": MECHANISMS}, base_params=base_flat,
+        spec={"mechanisms": MECHANISMS}, base_params=base_flat, dirty_hash=dirty_hash,
     )
     summary = family_summary(ROOT / "reports" / "families",
                              ROOT / "reports" / "runs", out["family_id"])

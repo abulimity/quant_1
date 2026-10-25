@@ -114,7 +114,7 @@ def main() -> None:
         git_sha=gsha, data_snapshot_id=data_snap,
         start=FULL_START, end=FULL_END, execution=args.execution,
         spec={"subperiod": [label for label, _, _ in SUBPERIODS]},
-        base_params=base_flat,
+        base_params=base_flat, dirty_hash=dirty_hash,
     )
     summary = family_summary(ROOT / "reports" / "families",
                              ROOT / "reports" / "runs", out["family_id"])

@@ -164,6 +164,17 @@ def test_run_sweep_drops_nonfinite_metrics(tmp_path):
     assert meta["nonfinite_metrics"] == '["yearly_sortino", "yearly_vol"]'
 
 
+def test_run_sweep_records_dirty_hash_in_family(tmp_path):
+    """run_sweep 把 dirty_hash 透传进 family.json（证据纯度记录）。"""
+    def run_one(point):
+        return ({"n_obs": 10}, {"sharpe": 1.0}, {})
+
+    out = _run_sweep(tmp_path, [{"p": 1}], run_one, dirty_hash="abc12345")
+    fam = registry.load_family(tmp_path / "families", out["family_id"])
+    assert fam["git_dirty"] is True
+    assert fam["dirty_hash"] == "abc12345"
+
+
 def test_collect_runs_family_summary(tmp_path):
     collect_runs = _load_collect_runs()
     points = [{"p": 0.1}, {"p": 0.2}, {"p": 0.3}]

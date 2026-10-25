@@ -11,6 +11,7 @@ import json
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from etf_rotation.report import runner
 from etf_rotation.report.context import ReportContext
@@ -98,6 +99,29 @@ def test_mirror_derived_removes_stale_files(tmp_path):
     runner.mirror_derived(derived, mirror)
     assert (mirror / "index.json").exists()
     assert not (mirror / "old_step.json").exists()
+
+
+def test_mirror_derived_restores_on_failure(tmp_path, monkeypatch):
+    import os
+    derived = tmp_path / "run" / "derived"
+    mirror = tmp_path / "derived"
+    derived.mkdir(parents=True)
+    mirror.mkdir()
+    (derived / "index.json").write_text("new", encoding="utf-8")
+    (mirror / "index.json").write_text("old", encoding="utf-8")
+    real_replace = os.replace
+    calls = {"n": 0}
+
+    def fake_replace(src, dst):
+        calls["n"] += 1
+        if calls["n"] == 2:            # 第 1 次是 mirror→backup，第 2 次是 tmp→mirror
+            raise OSError("boom")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(os, "replace", fake_replace)
+    with pytest.raises(OSError):
+        runner.mirror_derived(derived, mirror)
+    assert (mirror / "index.json").read_text(encoding="utf-8") == "old"
 
 
 def test_only_does_not_carry_old_derived_version(tmp_path):

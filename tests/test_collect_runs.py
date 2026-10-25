@@ -144,3 +144,13 @@ def test_cost_rows_reads_family_members_sorted(tmp_path):
     assert [r["one_side_bps"] for r in rows] == [0, 16]
     assert rows[0]["run_id"] == "c0"
     assert collect_runs.latest_family(fams, "cost") == "fc"
+
+
+def test_family_summary_no_campaign_dsr_when_pool_dirty(tmp_path):
+    """脏 family 的搜索池为空：campaign DSR 应为 null，不得回退到脏成员自己的 sharpes。"""
+    runs, fams = tmp_path / "runs", tmp_path / "families"
+    _run(runs, "d1", 0.9)
+    _member(fams, "fd", "d1", campaign="c1", family_extra={"git_dirty": True})
+    summ = collect_runs.family_summary(fams, runs, "fd")
+    assert summ["n_campaign_trials"] is None
+    assert summ["dsr_campaign"] is None

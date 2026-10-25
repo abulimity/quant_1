@@ -102,7 +102,7 @@ def main() -> None:
         families_root=ROOT / "reports" / "families",
         git_sha=gsha, data_snapshot_id=data_snap,
         start=args.start, end=args.end, execution=args.execution,
-        spec=grid, base_params=base_flat,
+        spec=grid, base_params=base_flat, dirty_hash=dirty_hash,
     )
 
     # scripts/collect_runs.py 与 run_grid 共享同一份汇总逻辑（单进程）

@@ -173,8 +173,11 @@ def family_summary(families_root: Path, runs_root: Path, fid: str) -> dict:
     n_family = fam["n_trials"]
     if campaign_id:
         campaign_sharpes, campaign_nobs = _search_pool(families_root, runs_root, campaign_id)
-        n_campaign = len(campaign_sharpes) or n_family
-        dsr_campaign = _dsr(campaign_sharpes or sharpes, n_campaign,
+        # 搜索池为空（如本 campaign 的搜索 family 全是脏工作区产物）时，campaign DSR
+        # 无定义：不得回退到 n_family / 本 family 的 sharpes——那会把脏 run 重新塞进
+        # 多重检验分母。n_campaign 与 dsr_campaign 都置 None，前端渲染为 —。
+        n_campaign = len(campaign_sharpes) or None
+        dsr_campaign = _dsr(campaign_sharpes, n_campaign or 0,
                             campaign_nobs or n_obs)
     else:
         n_campaign = n_family

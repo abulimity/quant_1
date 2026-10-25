@@ -72,20 +72,34 @@ def should_mirror(run_id: str, latest_id: str | None, force: bool = False) -> bo
 
 
 def mirror_derived(derived: Path, mirror_to: Path) -> None:
-    """把整棵 derived 原子替换到 mirror_to：先复制到同目录临时目录，再删旧、换名。
+    """把整棵 derived 原子替换到 mirror_to：三段交换 + 失败回滚。
 
     与 `copytree(dirs_exist_ok=True)` 的区别：后者保留 mirror 里的旧 step 文件，
-    step 被删除/改名后会留下残影；换名保证 mirror 要么是旧版本、要么是新版本。
+    step 被删除/改名后会留下残影；与「先删后换名」的区别：后者在删除与换名之间
+    有一瞬 mirror 不存在，且换名失败会丢掉旧镜像。三段交换保证读者要么看到旧版、
+    要么看到新版，失败时旧版原样保留。
     """
     derived, mirror_to = Path(derived), Path(mirror_to)
     mirror_to.parent.mkdir(parents=True, exist_ok=True)
     tmp = mirror_to.parent / f".{mirror_to.name}.tmp-{os.getpid()}"
+    backup = mirror_to.parent / f".{mirror_to.name}.bak-{os.getpid()}"
     if tmp.exists():
         shutil.rmtree(tmp)
+    if backup.exists():
+        shutil.rmtree(backup)
     shutil.copytree(derived, tmp)
-    if mirror_to.exists():
-        shutil.rmtree(mirror_to)
-    os.replace(tmp, mirror_to)
+
+    had_old = mirror_to.exists()
+    if had_old:
+        os.replace(mirror_to, backup)      # 旧版挪到备份位
+    try:
+        os.replace(tmp, mirror_to)         # 新版上位
+    except Exception:
+        if had_old:
+            os.replace(backup, mirror_to)  # 失败回滚旧版
+        raise
+    if had_old:
+        shutil.rmtree(backup, ignore_errors=True)
 
 
 def run(run_dir: Path, ctx: ReportContext, only: list[str] | None = None,
