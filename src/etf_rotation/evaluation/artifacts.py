@@ -243,6 +243,24 @@ def store_run(*, root: Path, run_id: str, kind: str, profile: str, meta: dict,
         raise
 
 
+def latest_run_id(root: Path) -> str | None:
+    """读 `root.parent/latest.json` 的 `run_id`；缺失/损坏/无该键返回 None。
+
+    供镜像守卫判断「这次要镜像的 run 是不是 latest」，避免 `--run-id <旧 run>`
+    把 `reports/derived/` 悄悄换成别的 run 的派生数据。
+    """
+    root = Path(root)
+    latest = root.parent / "latest.json"
+    if not latest.exists():
+        return None
+    try:
+        payload = json.loads(latest.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    rid = payload.get("run_id")
+    return str(rid) if rid is not None else None
+
+
 def resolve_run(root: Path, run_id: str | None = None) -> Path:
     """定位 run 目录：`run_id` 为空时读 `reports/latest.json`。
 

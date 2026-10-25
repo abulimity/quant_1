@@ -30,6 +30,8 @@ def main() -> None:
     parser.add_argument("--latest", action="store_true", help="使用 reports/latest.json 指向的 run")
     parser.add_argument("--only", nargs="+", default=None, metavar="STEP",
                         help="只跑指定 step（其余同 run 产物保留）")
+    parser.add_argument("--mirror", choices=["auto", "always", "never"], default="auto",
+                        help="镜像策略：auto=仅当该 run 是 latest；always=强制；never=不镜像")
     args = parser.parse_args()
 
     if args.run_id and args.latest:
@@ -57,14 +59,19 @@ def main() -> None:
         sys.exit(1)
 
     ctx = ReportContext.load(run_dir, strict_snapshot=False)
+    latest = artifacts.latest_run_id(RUNS_DIR)
+    do_mirror = (args.mirror != "never"
+                 and runner.should_mirror(run_dir.name, latest, force=args.mirror == "always"))
+    mirror_to = MIRROR_DIR if do_mirror else None
     try:
-        results = runner.run(run_dir, ctx, only=args.only, mirror_to=MIRROR_DIR)
+        results = runner.run(run_dir, ctx, only=args.only, mirror_to=mirror_to)
     except ValueError as exc:   # 未知 step 名
         print(f"错误：{exc}", file=sys.stderr)
         sys.exit(1)
 
     print(f"run_id: {ctx.run_id}")
-    print(f"derived: {run_dir / 'derived'}  (mirror -> {MIRROR_DIR})")
+    print(f"derived: {run_dir / 'derived'}"
+          + (f"  (mirror -> {MIRROR_DIR})" if do_mirror else "  (mirror 跳过：非 latest)"))
     for name, status in results.items():
         flag = "ok  " if status["ok"] else "FAIL"
         detail = f" {status['error']}" if status["error"] else ""

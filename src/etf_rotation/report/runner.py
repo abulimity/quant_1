@@ -59,6 +59,35 @@ def load_input_hashes(run_dir: Path) -> dict[str, str]:
     return {str(n): str(h) for n, h in zip(df["name"], df["sha256"])}
 
 
+def should_mirror(run_id: str, latest_id: str | None, force: bool = False) -> bool:
+    """派生镜像的守卫：只有「目标 run 是 latest」时才允许覆盖 `reports/derived/`。
+
+    `force=True` 用于显式 `--mirror always`；`latest_id=None`（尚无基线）时默认不镜像。
+    """
+    if force:
+        return True
+    if latest_id is None:
+        return False
+    return run_id == latest_id
+
+
+def mirror_derived(derived: Path, mirror_to: Path) -> None:
+    """把整棵 derived 原子替换到 mirror_to：先复制到同目录临时目录，再删旧、换名。
+
+    与 `copytree(dirs_exist_ok=True)` 的区别：后者保留 mirror 里的旧 step 文件，
+    step 被删除/改名后会留下残影；换名保证 mirror 要么是旧版本、要么是新版本。
+    """
+    derived, mirror_to = Path(derived), Path(mirror_to)
+    mirror_to.parent.mkdir(parents=True, exist_ok=True)
+    tmp = mirror_to.parent / f".{mirror_to.name}.tmp-{os.getpid()}"
+    if tmp.exists():
+        shutil.rmtree(tmp)
+    shutil.copytree(derived, tmp)
+    if mirror_to.exists():
+        shutil.rmtree(mirror_to)
+    os.replace(tmp, mirror_to)
+
+
 def run(run_dir: Path, ctx: ReportContext, only: list[str] | None = None,
         mirror_to: Path | None = None) -> dict[str, dict]:
     """跑 step 并写 `{run_dir}/derived/`，返回 `{step: {ok, duration_ms, error}}`。
@@ -126,9 +155,7 @@ def run(run_dir: Path, ctx: ReportContext, only: list[str] | None = None,
         raise
 
     if mirror_to is not None:
-        mirror_to = Path(mirror_to)
-        mirror_to.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(derived, mirror_to, dirs_exist_ok=True)
+        mirror_derived(derived, Path(mirror_to))
 
     return {name: statuses[name] for name in sorted(steps)}
 

@@ -79,3 +79,22 @@ def test_mirror_copies_derived_tree(tmp_path):
     runner.run(tmp_path / "runs" / "r1", _ctx(), only=["alignment"], mirror_to=mirror)
     assert (mirror / "index.json").exists()
     assert (mirror / "alignment.json").exists()
+
+
+def test_should_mirror_only_for_latest():
+    assert runner.should_mirror("r1", "r1") is True
+    assert runner.should_mirror("r0", "r1") is False
+    assert runner.should_mirror("r0", "r1", force=True) is True
+    assert runner.should_mirror("r0", None) is False
+
+
+def test_mirror_derived_removes_stale_files(tmp_path):
+    derived = tmp_path / "run" / "derived"
+    mirror = tmp_path / "derived"
+    derived.mkdir(parents=True)
+    mirror.mkdir()
+    (derived / "index.json").write_text("{}", encoding="utf-8")
+    (mirror / "old_step.json").write_text("{}", encoding="utf-8")
+    runner.mirror_derived(derived, mirror)
+    assert (mirror / "index.json").exists()
+    assert not (mirror / "old_step.json").exists()

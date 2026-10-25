@@ -133,3 +133,10 @@ def test_resolve_run_missing(tmp_path):
         artifacts.resolve_run(tmp_path / "runs", "nope")
     with pytest.raises(FileNotFoundError):
         artifacts.resolve_run(tmp_path / "runs")   # 还没有 latest.json
+
+
+def test_latest_run_id_reads_and_tolerates_bad_json(tmp_path):
+    (tmp_path / "latest.json").write_text('{"run_id": "abc"}', encoding="utf-8")
+    assert artifacts.latest_run_id(tmp_path / "runs") == "abc"
+    (tmp_path / "latest.json").write_text("not-json", encoding="utf-8")
+    assert artifacts.latest_run_id(tmp_path / "runs") is None
