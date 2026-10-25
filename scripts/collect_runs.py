@@ -77,6 +77,34 @@ def _write_atomic(path: Path, payload: dict) -> None:
     os.replace(tmp, path)
 
 
+def _search_pool(families_root: Path, runs_root: Path, campaign_id: str) -> tuple[list[float], int | None]:
+    """收集同一 campaign 下**搜索类** family 的 (sharpes, n_obs)。
+
+    只统计 `grid / ablation / assumption`：这三个是「试过多少个候选」的试验；
+    `oos / cost` 是验证，不是候选，计入会稀释多重检验校正的分母。
+    `n_obs` 取全窗口最大值（搜索类都应跑全窗口；OOS 只有子区间）。
+    """
+    sharpes: list[float] = []
+    nobs: list[int] = []
+    for fam_dir in sorted(Path(families_root).glob("*")):
+        if not fam_dir.is_dir() or not (fam_dir / "family.json").exists():
+            continue
+        fam = registry.load_family(families_root, fam_dir.name)
+        if (fam.get("campaign_id") or "") != campaign_id:
+            continue
+        if fam.get("kind") not in ("grid", "ablation", "assumption"):
+            continue
+        for member in fam["members"]:
+            run_dir = Path(runs_root) / str(member["run_id"])
+            metrics = _read_metrics(run_dir)
+            if "sharpe" in metrics:
+                sharpes.append(float(metrics["sharpe"]))
+            meta = _read_meta(run_dir)
+            if meta.get("n_obs") is not None:
+                nobs.append(int(meta["n_obs"]))
+    return sharpes, (max(nobs) if nobs else None)
+
+
 def family_summary(families_root: Path, runs_root: Path, fid: str) -> dict:
     """读 `families/{fid}` 的成员与对应 run 指标，生成并落盘 summary.json。
 
@@ -127,7 +155,14 @@ def family_summary(families_root: Path, runs_root: Path, fid: str) -> dict:
         best = sweep.jsonable(next(row for row in rows if row.get("sharpe") == top))
 
     n_family = fam["n_trials"]
-    n_campaign = overfitting.campaign_trials(families_root, campaign_id) if campaign_id else n_family
+    if campaign_id:
+        campaign_sharpes, campaign_nobs = _search_pool(families_root, runs_root, campaign_id)
+        n_campaign = len(campaign_sharpes) or n_family
+        dsr_campaign = _dsr(campaign_sharpes or sharpes, n_campaign,
+                            campaign_nobs or n_obs)
+    else:
+        n_campaign = n_family
+        dsr_campaign = _dsr(sharpes, n_family, n_obs)
 
     summary = {
         "family_id": fid,
@@ -143,7 +178,7 @@ def family_summary(families_root: Path, runs_root: Path, fid: str) -> dict:
         "sharpe_haircut": (sweep.jsonable(overfitting.sharpe_haircut(sharpes))
                            if len(sharpes) >= 2 else None),
         "dsr_family": _dsr(sharpes, n_family, n_obs),
-        "dsr_campaign": _dsr(sharpes, n_campaign, n_obs),
+        "dsr_campaign": dsr_campaign,
         "best": best,
         "run_ids": run_ids,
         "results": sweep.jsonable(rows),
