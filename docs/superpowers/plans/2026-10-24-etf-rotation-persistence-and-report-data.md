@@ -1029,7 +1029,7 @@ def test_events_capture_switch_and_overheat():
 
 - [ ] **Step 3: 实现**
 
-判定：`switch` = **持仓集合变化**（`{w_t ≥ 0.5%}` 与前一交易日不同；`hysteresis_held` 只作为触发快照保留在 `triggers` 里，不再单独定义事件，因为五相位平滑下它几乎每天为 False，会把事件表淹没）；`n_overheat_exits > 0 → overheat`；`vol_cap_scale < 1 → vol_cap`；`n_defensive` 变化 → defensive；纳指/黄金权重变化 → cross_asset。`top_changes` 取 `|Δw|` 前 3；`turnover = Σ|Δw|/2`；`fwd_5d/fwd_20d = Π(1+r_{t+1..t+n}) − 1`，尾部不足给 `None`。
+判定：`switch` = **核心持仓变化**（在 `w ≥ 0.5%` 的标的里按权重取前 3 名，前 3 名集合与前一交易日不同；`hysteresis_held` 只作为触发快照保留在 `triggers` 里）。为什么不是全持仓集合：实测全集合变化有 935–1310 天（占 1838 天的 51%–71%），等于「每天都在换仓」；top-3 是 297 天，符合报告「核心持仓轮动」的语义。`n_overheat_exits > 0 → overheat`；`vol_cap_scale < 1 → vol_cap`；`n_defensive` 变化 → defensive；纳指/黄金权重变化 → cross_asset。`top_changes` 取 `|Δw|` 前 3；`turnover = Σ|Δw|/2`；`fwd_5d/fwd_20d = Π(1+r_{t+1..t+n}) − 1`，尾部不足给 `None`。
 
 - [ ] **Step 4: 跑测试确认通过** → PASS
 

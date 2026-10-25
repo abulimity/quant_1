@@ -48,7 +48,7 @@ tests/test_report_extremes.py
 
 ## 注意
 
-- **switch 的定义已修正**：`switch` = 持仓集合变化（`{w ≥ 0.5%}` 与前一交易日不同），不是 `hysteresis_held == False`——五相位平滑下后者几乎每天为 False（实测 1579/1838），会把事件表淹没。`hysteresis_held` 只留在 `triggers` 里作审计。
+- **switch 的定义已修正**：`switch` = 核心持仓变化（`w ≥ 0.5%` 里按权重取前 3，前 3 名集合变化），不是 `hysteresis_held == False`，也不是全持仓集合（后者 935–1310 天，等于每天都在换仓；top-3 是 297 天）。`hysteresis_held` 只留在 `triggers` 里作审计。
 - `event_dates` 的判定规则必须与 `rebalance_events` 共用同一函数，禁止两处各写一套。
 - 极端日不要断言"贡献之和等于当日收益"；真实数据有现金利息与执行偏差，用 `residual` 字段承载。
 - `fwd_5d/fwd_20d` 是事后信息，字段名与注释都要标注。
