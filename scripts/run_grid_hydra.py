@@ -24,7 +24,7 @@ from etf_rotation import config
 from etf_rotation.backtest import run
 from etf_rotation.data import snapshot
 from etf_rotation.evaluation import artifacts, metrics, registry, sweep
-from etf_rotation.pipeline import build_weights, load_context
+from etf_rotation.pipeline import build_weights, compute_benchmark, load_context
 from etf_rotation.signals import cache
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -100,6 +100,7 @@ def _run_one(p: dict, cfg: DictConfig, ctx: dict, *, gsha: str, dirty_hash: str,
                                              r.turnover, r.fees),
         "weights": weights,
         "holdings": r.positions,
+        "benchmark": compute_benchmark(p, start, end),
     }
     artifacts.store_run(root=ROOT / "reports" / "runs", run_id=run_id, kind="grid",
                         profile=profile, meta=meta, metrics=clean_metrics, frames=frames)
@@ -121,7 +122,7 @@ def main(cfg: DictConfig) -> None:
     """把 Hydra 的一组配置翻译成一次单变体回测（网格展开由 Hydra 负责）。"""
     campaign = str(cfg.get("campaign", ""))
     tag = str(cfg.get("tag", ""))
-    profile = str(cfg.get("save_profile", "minimal"))
+    profile = str(cfg.get("save_profile", "standard"))
     p = config.load_params()
     config.set_nested(p, cfg.param_key, str(cfg.param_value))
     ctx = load_context()

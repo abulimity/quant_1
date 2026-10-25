@@ -23,7 +23,7 @@ from etf_rotation import config
 from etf_rotation.backtest import run
 from etf_rotation.data import snapshot
 from etf_rotation.evaluation import artifacts, metrics, registry, sensitivity, sweep
-from etf_rotation.pipeline import build_weights, load_context
+from etf_rotation.pipeline import build_weights, compute_benchmark, load_context
 from etf_rotation.signals import cache
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -44,7 +44,7 @@ def main() -> None:
     ap.add_argument("--end", default="2026-07-31")
     ap.add_argument("--execution", choices=["close", "open"], default="open")
     ap.add_argument("--save-profile", choices=list(artifacts.SAVE_PROFILES),
-                    default="minimal")
+                    default="standard")
     ap.add_argument("--campaign", default="", help="campaign_id（DSR 跨 family 累计用）")
     ap.add_argument("--tag", default="", help="自由标签，只写 meta，不参与身份")
     args = ap.parse_args()
@@ -60,6 +60,9 @@ def main() -> None:
     for key in grid:
         base_flat.pop(key, None)
     base_flat["_start"], base_flat["_end"] = args.start, args.end
+
+    # 基准序列与网格点无关（8 个维度都不改 universe），循环外算一次复用
+    bench = compute_benchmark(base, args.start, args.end)
 
     def run_one(point: dict) -> tuple[dict, dict, dict]:
         """单点：覆写参数 → 建权 → bt 记账 → 指标 + 产物面板。"""
@@ -100,6 +103,7 @@ def main() -> None:
                                                  r.turnover, r.fees),
             "weights": weights,
             "holdings": r.positions,
+            "benchmark": bench,
         }
         return meta, s, frames
 
