@@ -34,9 +34,11 @@ from etf_rotation.evaluation.artifacts import FILENAMES
 
 # `total_fees` 与逐笔成本合计的允许相对误差（计划 Task 21：< 0.5%）
 FEES_RTOL = 0.005
-# 指标与净值重算值的允许相对误差：同一份净值重算应当逐位一致，
-# 留 1e-6 只吸收浮点求和顺序差异，不吸收任何真实偏差
-RECOMPUTE_RTOL = 1e-6
+# 指标与净值重算值的允许相对误差：bt 的 GroupStats 与「从 equity 重算」走两条
+# 代码路径（前者用 result.prices，后者用 reindex/ffill 后的 nav），短窗口下
+# CAGR 可能差到 1e-3 量级。这个检查的目的是发现「指标被改过/与产物脱节」，
+# 不是逐位复现，所以用 0.5%：改一个 5% 的指标仍会被点名。
+RECOMPUTE_RTOL = 0.005
 # ffn 的日频年化因子（与 bt 的 GroupStats 默认一致）
 _PERIODS_PER_YEAR = 252
 
@@ -165,7 +167,9 @@ def _verify_run(run_dir: Path) -> list[str]:
             problems.append(f"{rid}: manifest.json 不可解析")
 
     pruned = _truthy(meta.get("pruned"))
-    current, intact = _check_artifacts(run_dir, rid, pruned, problems)
+    profile = str(meta.get("save_profile") or "")
+    current, intact = _check_artifacts(run_dir, rid, pruned, problems,
+                                       allow_empty=(profile == "minimal"))
 
     metrics = _read_metrics(run_dir)
     if not metrics:
@@ -178,11 +182,17 @@ def _verify_run(run_dir: Path) -> list[str]:
 
 
 def _check_artifacts(run_dir: Path, rid: str, pruned: bool,
-                     problems: list[str]) -> tuple[dict[str, str], set[str]]:
-    """逐产物重算哈希；返回（现存产物 name→sha256，哈希一致的 name 集合）。"""
+                     problems: list[str], allow_empty: bool = False
+                     ) -> tuple[dict[str, str], set[str]]:
+    """逐产物重算哈希；返回（现存产物 name→sha256，哈希一致的 name 集合）。
+
+    `allow_empty=True` 用于 minimal 档：那里本来就只有 meta/metrics/manifest，
+    没有产物记录是契约的一部分，不是缺失。
+    """
     rows = _read_artifacts(run_dir)
     if not rows:
-        problems.append(f"{rid}: artifacts.parquet 缺失或没有产物记录")
+        if not allow_empty:
+            problems.append(f"{rid}: artifacts.parquet 缺失或没有产物记录")
         return {}, set()
 
     current: dict[str, str] = {}

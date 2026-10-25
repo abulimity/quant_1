@@ -239,3 +239,9 @@ def test_verify_reports_partial_v2_without_meta(tmp_path):
     (broken / "artifacts.parquet").write_bytes(b"x")
     problems = verify.verify(tmp_path / "runs")
     assert any("broken01" in msg for msg in problems)
+
+
+def test_verify_allows_minimal_profile_without_artifacts(tmp_path):
+    """minimal 档只有 meta/metrics/manifest：没有产物记录是契约，不是缺失。"""
+    _store(tmp_path, run_id="min", profile="minimal")
+    assert verify.verify(tmp_path / "runs") == []
