@@ -32,7 +32,7 @@ def trading_days(start: str, end: str) -> pd.DatetimeIndex:
     主路径：查 trading_calendar 表的 is_open = TRUE 记录，按 ts 升序返回 [start, end] 区间内的开市日。
     回退路径：warehouse 尚未 curate（或日历表为空）时用行情 ts 去重近似。
     """
-    con = duckdb.connect(str(WAREHOUSE))
+    con = duckdb.connect(str(WAREHOUSE), read_only=True)
     try:
         df = con.execute(
             "SELECT ts FROM trading_calendar WHERE is_open AND ts BETWEEN ? AND ? ORDER BY ts",

@@ -92,7 +92,7 @@ def load_prices() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
       opn   — 后复权开盘价（T+1 开盘成交价，与 close 同量纲）
       amt   — 成交额（point-in-time 流动性过滤用）
     """
-    con = duckdb.connect(str(WAREHOUSE))
+    con = duckdb.connect(str(WAREHOUSE), read_only=True)
     try:
         # 关联 symbols 把 symbol_id 翻译成 ticker，直接输出可透视的面板
         close_adj = con.execute(
