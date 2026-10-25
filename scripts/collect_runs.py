@@ -77,15 +77,18 @@ def _write_atomic(path: Path, payload: dict) -> None:
     os.replace(tmp, path)
 
 
-def _search_pool(families_root: Path, runs_root: Path, campaign_id: str) -> tuple[list[float], int | None]:
+def search_pool(families_root: Path, runs_root: Path, campaign_id: str) -> tuple[list[float], int | None]:
     """收集同一 campaign 下**搜索类** family 的 (sharpes, n_obs)。
 
     只统计 `grid / ablation / assumption`：这三个是「试过多少个候选」的试验；
     `oos / cost` 是验证，不是候选，计入会稀释多重检验校正的分母。
     `n_obs` 取全窗口最大值（搜索类都应跑全窗口；OOS 只有子区间）。
+    按 `run_id` 去重：同一配置（如默认参数）会被多个维度的网格重复选中，
+    内容寻址后是同一个 run，DSR 的分母必须只算一次。
     """
     sharpes: list[float] = []
     nobs: list[int] = []
+    seen: set[str] = set()
     for fam_dir in sorted(Path(families_root).glob("*")):
         if not fam_dir.is_dir() or not (fam_dir / "family.json").exists():
             continue
@@ -95,7 +98,11 @@ def _search_pool(families_root: Path, runs_root: Path, campaign_id: str) -> tupl
         if fam.get("kind") not in ("grid", "ablation", "assumption"):
             continue
         for member in fam["members"]:
-            run_dir = Path(runs_root) / str(member["run_id"])
+            run_id = str(member["run_id"])
+            if run_id in seen:
+                continue
+            seen.add(run_id)
+            run_dir = Path(runs_root) / run_id
             metrics = _read_metrics(run_dir)
             if "sharpe" in metrics:
                 sharpes.append(float(metrics["sharpe"]))
@@ -103,6 +110,10 @@ def _search_pool(families_root: Path, runs_root: Path, campaign_id: str) -> tupl
             if meta.get("n_obs") is not None:
                 nobs.append(int(meta["n_obs"]))
     return sharpes, (max(nobs) if nobs else None)
+
+
+# 旧名保留为只读别名：family_summary 与其它调用方沿用原路径。
+_search_pool = search_pool
 
 
 def family_summary(families_root: Path, runs_root: Path, fid: str) -> dict:

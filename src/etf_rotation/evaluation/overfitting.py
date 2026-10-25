@@ -26,7 +26,7 @@ def campaign_trials(root, campaign_id: str) -> int:
     root = Path(root)
     if not root.exists():
         return 0
-    total = 0
+    seen: set[str] = set()
     for path in root.glob("*/members/*.json"):
         if path.name.startswith("."):
             continue
@@ -35,8 +35,8 @@ def campaign_trials(root, campaign_id: str) -> int:
         except Exception:
             continue
         if row.get("campaign_id", "") == campaign_id:
-            total += 1
-    return total
+            seen.add(str(row.get("run_id") or path.stem))
+    return len(seen)
 
 
 def deflated_sharpe(sharpes, n_trials: int, n_obs: int) -> float:

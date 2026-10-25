@@ -38,6 +38,13 @@ def test_campaign_trials_sums_across_families(tmp_path):
     assert overfitting.campaign_trials(tmp_path, "c1") == 4
 
 
+def test_campaign_trials_dedupes_same_run_across_families(tmp_path):
+    registry.write_family_member(tmp_path, "f1", "shared", {}, campaign_id="c1")
+    registry.write_family_member(tmp_path, "f1", "a", {}, campaign_id="c1")
+    registry.write_family_member(tmp_path, "f2", "shared", {}, campaign_id="c1")
+    assert overfitting.campaign_trials(tmp_path, "c1") == 2
+
+
 def test_family_id_is_deterministic_and_order_independent():
     a = registry.family_id("grid", {"x": [1, 2], "y": [3]}, {"b": 1, "a": 2},
                            "2024-01-01", "2024-12-31", "open", "abc", "d1", "c1")
