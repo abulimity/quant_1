@@ -17,6 +17,11 @@ from pathlib import Path
 
 import pandas as pd
 
+# 阶段快照的固定顺序（与 pipeline trace["stages"] 的写入顺序一致）。
+# 顺序即语义：candidate → overheat → cross_asset → defensive → phases → hysteresis → final。
+STAGE_ORDER = ("candidate", "overheat", "cross_asset", "defensive",
+               "phases", "hysteresis", "final")
+
 
 def _get(df: pd.DataFrame, d, t) -> float:
     """安全取面板值：列/索引缺失或 NaN 时返回 nan。"""
@@ -164,9 +169,42 @@ def build_frames(days, traces, sig, params):
     return diary, tk
 
 
-def write(reports_dir: Path, diary: pd.DataFrame, ticker_signals: pd.DataFrame) -> None:
-    """落盘 reports/signals/{decision_diary,ticker_signals}.parquet。"""
+def build_stages(traces: list[dict], days) -> pd.DataFrame:
+    """把每日 `trace["stages"]` 展成长表：`date, ticker, stage, weight`。
+
+    - 一行 = 某个交易日、某个标的、某个阶段的权重；
+    - 阶段按 `STAGE_ORDER` 输出（顺序稳定，便于前端做瀑布）；
+    - trace 里缺某个阶段（旧 trace / 合成数据）时跳过该阶段，不补 0 行；
+    - `days` 与 `traces` 按下标一一对应（与 `build_frames` 同一口径）。
+    """
+    rows: list[dict] = []
+    for d, trace in zip(days, traces):
+        stage_weights = trace.get("stages") or {}
+        for stage in STAGE_ORDER:
+            weights = stage_weights.get(stage) or {}
+            for ticker in sorted(weights):
+                rows.append({
+                    "date": d,
+                    "ticker": str(ticker),
+                    "stage": stage,
+                    "weight": float(weights[ticker]),
+                })
+    table = pd.DataFrame(rows, columns=["date", "ticker", "stage", "weight"])
+    table["date"] = pd.to_datetime(table["date"])
+    return table
+
+
+def write(reports_dir: Path, diary: pd.DataFrame, ticker_signals: pd.DataFrame,
+          stages: pd.DataFrame | None = None) -> None:
+    """落盘 `reports/signals/{decision_diary,ticker_signals,stages}.parquet`。
+
+    `stages=None` 时保持旧行为（只写两张表）；主路径已改为
+    `run_backtest` 把 stages 放进 `store_run(frames=...)`，这里的参数只为兼容
+    旧调用方（手工落盘 / 测试）保留。
+    """
     out = Path(reports_dir) / "signals"
     out.mkdir(parents=True, exist_ok=True)
     diary.to_parquet(out / "decision_diary.parquet")
     ticker_signals.to_parquet(out / "ticker_signals.parquet")
+    if stages is not None:
+        stages.to_parquet(out / "stages.parquet", compression="zstd")

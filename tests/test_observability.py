@@ -56,6 +56,47 @@ def _mock_diary_tk():
     return diary, tk
 
 
+def test_trace_stages_in_semantic_order_and_final_matches_diary():
+    p = config.load_params()
+    res = pipe.build_weights(p, "2024-01-01", "2024-02-29", with_trace=True)
+    assert res.traces
+    expected = ["candidate", "overheat", "cross_asset", "defensive",
+                "phases", "hysteresis", "final"]
+    assert list(res.traces[0]["stages"]) == expected
+    assert all(list(t["stages"]) == expected for t in res.traces)
+
+    diary, _ = observability.build_frames(res.days, res.traces, res.sig, p)
+    long = observability.build_stages(res.traces, res.days)
+    final = (long.loc[long["stage"] == "final"]
+             .groupby("date")["weight"].sum()
+             .reindex(res.days, fill_value=0.0))
+    assert (final - diary["total_weight"]).abs().max() < 1e-12
+
+
+def test_write_with_stages_writes_parquet(tmp_path):
+    idx = pd.date_range("2024-01-01", periods=2, freq="B")
+    diary = pd.DataFrame({"total_weight": [0.5, 0.5]}, index=idx)
+    tk = pd.DataFrame({"weight": [0.5, 0.5]})
+    tk.index = pd.MultiIndex.from_arrays([idx, ["A.SH", "A.SH"]],
+                                         names=["date", "ticker"])
+    stages = pd.DataFrame({
+        "date": [idx[0], idx[0], idx[1], idx[1]],
+        "ticker": ["A.SH"] * 4,
+        "stage": ["candidate"] * 2 + ["final"] * 2,
+        "weight": [0.6, 0.6, 0.5, 0.5],
+    })
+
+    observability.write(tmp_path, diary, tk, stages=stages)
+
+    out = pd.read_parquet(tmp_path / "signals" / "stages.parquet")
+    assert list(out.columns) == ["date", "ticker", "stage", "weight"]
+    assert len(out) == 4
+    # 不给 stages 时保持旧行为：不产生 stages.parquet
+    compat = tmp_path / "compat"
+    observability.write(compat, diary, tk)
+    assert not (compat / "signals" / "stages.parquet").exists()
+
+
 def test_signal_plot_figures_build():
     import plotly.graph_objects as go
 

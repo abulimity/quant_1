@@ -364,10 +364,30 @@ def _apply_overheat(target, close_d, llt80_d, pct):
     return out
 
 
+def _stage_snapshot(weights) -> dict[str, float]:
+    """把某一阶段的权重压成 `{ticker: weight}`，丢弃 0 与负值。
+
+    只保留真正占用资金的仓位：0 权重（已清零/未选中）与负值（本策略不产生）
+    对瀑布归因没有信息量，留在快照里只会让长表多出无意义的行。
+    """
+    items = weights.items() if hasattr(weights, "items") else []
+    return {
+        str(ticker): float(value)
+        for ticker, value in items
+        if value is not None and pd.notna(value) and float(value) > 0.0
+    }
+
+
 def _daily_target(i: int, d, sig: dict, params: dict,
-                  last_def_update: int, current_defn: list[str]) -> tuple:
+                  last_def_update: int, current_defn: list[str],
+                  with_trace: bool = False) -> tuple:
     """计算单日目标权重（T 日信号），返回
     (target, last_def_update, current_defn, risk_score, keep, trace)。
+
+    `with_trace=True` 时在 `trace["stages"]` 依次记录
+    `candidate → overheat → cross_asset → defensive` 四个阶段快照；
+    False 时完全不采集（不影响任何决策与数值）。
+
     risk_score 覆盖风险池全量 ticker（可投资且 m21>0 者填当日排名分，其余 NaN）。
 
     ── 决策链路（8 段，顺序不可调换）──────────────────────────────
@@ -475,12 +495,18 @@ def _daily_target(i: int, d, sig: dict, params: dict,
                 target[keep[0]] = risk_budget
     # ── ⑥ 单 ETF 过热退出：风险资产 HRP 配权后、纳指/黄金之前归零过热标的 ──
     # 判据：P_t ≥ LLT₈₀,t·(1+pct)
+    stages: dict[str, dict[str, float]] = {}
+    if with_trace:
+        # candidate = 风险池 HRP 配权后的逐日目标（过热退出前）
+        stages["candidate"] = _stage_snapshot(target)
     pre_overheat = set(target)
     if params["mechanisms"]["overheat"]:
         target = _apply_overheat(
             target, sig["close"].loc[d], sig["llt80"].loc[d],
             params["risk"]["overheat_pct"])
     overheat_exited = sorted(pre_overheat - set(target))
+    if with_trace:
+        stages["overheat"] = _stage_snapshot(target)
     # ── ⑦ 纳指/黄金：各自按 60 日波动向 18% 目标缩放（只减不加）─────────
     if base["nasdaq"] > 0:
         # 缩放公式：scale = min(1, v_target / v_realized)
@@ -492,6 +518,8 @@ def _daily_target(i: int, d, sig: dict, params: dict,
         v = risk_layers.vol_scale(float(gold_vol.loc[d]) if pd.notna(gold_vol.loc[d]) else 0.0,
                                   params["risk"]["vol_target_gold"])
         target[gold] = base["gold"] * v
+    if with_trace:
+        stages["cross_asset"] = _stage_snapshot(target)
 
     # ── ⑧ 防守仓：预热 60 个交易日后才启用；仅在风险仓未满配（有剩余资金）时承接，每 120 日重选 ──
     # 防守标的选择：RAR_i = mean(r_i, 60日) / std(r_i, 60日)（风险调整动量）
@@ -512,6 +540,8 @@ def _daily_target(i: int, d, sig: dict, params: dict,
             w = (1.0 - allocated) / len(current_defn)
             for t in current_defn:
                 target[t] = target.get(t, 0.0) + w
+    if with_trace:
+        stages["defensive"] = _stage_snapshot(target)
 
     # ── 决策轨迹采集（只读既有中间量，不参与任何决策）─────────────
     trace = {
@@ -534,6 +564,8 @@ def _daily_target(i: int, d, sig: dict, params: dict,
         "overheat_exited": overheat_exited,
         "defensive": list(current_defn),
     }
+    if with_trace:
+        trace["stages"] = stages
     return target, last_def_update, current_defn, risk_score, keep, trace
 
 
@@ -642,7 +674,7 @@ def build_weights(params: dict, start: str, end: str, context: dict | None = Non
     for i, d in enumerate(days):
         # ① 逐日目标权重（T 日信号，后续由执行层顺延到 T+1 生效）
         target, last_def_update, current_defn, score, keep, trace = _daily_target(
-            i, d, sig, params, last_def_update, current_defn)
+            i, d, sig, params, last_def_update, current_defn, with_trace=with_trace)
         # ② 五相位缓冲：只有 i % 5 这一相被今天的 target 覆盖，其余 4 相沿用旧值
         phase_weights[i % 5] = pd.Series(target).reindex(cols).fillna(0.0)
         if params["mechanisms"]["phases"]:
@@ -650,12 +682,16 @@ def build_weights(params: dict, start: str, end: str, context: dict | None = Non
             candidate = _combine_phases(phase_weights)
         else:
             candidate = phase_weights[i % 5]
+        if with_trace:
+            trace["stages"]["phases"] = _stage_snapshot(candidate)
         if params["mechanisms"]["hysteresis"]:
             # ③ 整组迟滞：new ≤ old·(1+improve) → 维持旧组合
             candidate, held, new_score, old_score = _apply_hysteresis(
                 candidate, prev_final, score, sig["risk_tickers"], improve)
         else:
             held, new_score, old_score = False, float("nan"), float("nan")
+        if with_trace:
+            trace["stages"]["hysteresis"] = _stage_snapshot(candidate)
         # port_rets 只 append「上一日最终权重 × 当日收益」，只用 ≤d 的信息（无前视）。
         if i > 0:
             prev_ret = float((prev_final * sig["ret"].loc[d, cols].fillna(0.0)).sum())
@@ -665,6 +701,8 @@ def build_weights(params: dict, start: str, end: str, context: dict | None = Non
             final, scale = _apply_portfolio_vol_cap(candidate, port_rets, params)
         else:
             final, scale = candidate, 1.0
+        if with_trace:
+            trace["stages"]["final"] = _stage_snapshot(final)
         weights.loc[d, final.index] = final.values
         prev_final = final
         if with_trace:
