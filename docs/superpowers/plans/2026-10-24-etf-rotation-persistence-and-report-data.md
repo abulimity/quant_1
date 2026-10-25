@@ -1991,3 +1991,83 @@ git commit -m "chore: 新登记体系验证通过后清理旧 run"
 - **并行编排覆盖**：worktree 环境→§6.5；产物归属→§6.6；共用文件合并顺序→§6.4；失败处理→§6.9。
 - **类型一致性**：`store_run` 的 `frames` 键、`ReportContext` 字段、`index.json` 字段在各任务间一致；`event_dates` 在 Task 10 产出、Task 14 消费。
 - **已知取舍**：`stages` 只在 full 档；网格默认 standard 不存逐笔交易（可由 transactions + weights 重算）；信号缓存不含 `close/ret/n_days/avg20`（声明为派生）。
+
+---
+
+## 9. 执行记录（2026-10-25）
+
+### 9.1 会话与完成情况
+
+| 工作流 | 会话 | 任务 | 结果 | 合并 commit |
+|---|---|---|---|---|
+| S0a | `ses_e916acd39ffeuHCauNl1W1XirT` | 2–5 | 完成（5 commit + 1 修复） | `00114a9` |
+| S0b | `ses_e916accf9ffe2hwyOaU1jBJiQ2` | 6 | 完成 | `d66765d` |
+| S1 | `ses_e913325e4ffeNig7clhstISLZM` | 7–9 | 完成 | `28c1c67` |
+| C1 | `ses_e91332635ffeUnzrHIlgfeT7l7` | 17–18 | 完成（含 `SIGNAL_KEYS` 收口） | `2e1295e` |
+| S2a | `ses_e8f6d9492ffesIkIAiK71enBMO` | 10 / 12 / 15 | 完成（含 2 次 switch 收紧） | `4f64b54`、`df1e121` |
+| S2b | `ses_e8f6d9461ffeqlDvjZMjvy7ChI` | 11 / 13 / 16 | 完成 | `3ecb360` |
+| C2 | `ses_e8f6d5c5dffefOsAplnxUaBfPz` | 19 | 完成 | `027810b` |
+| D1 | `ses_e8f6d5d03ffexcAW07Fc724BPv` | 21 | 完成（阶段 2 由 D2 补） | `35c1461` |
+| S3 | `ses_e8eb86d7cffepeAuj2FsMN1Z5D` | 14 | 完成 | `6f8c972` |
+| C3 | `ses_e8e9dd815ffezg4241zftaUsDj` | 20a / 20b | **会话未自行完成**，由编排者接管 | 见 §9.2 #17 |
+
+### 9.2 与计划的偏离（均已确认并落地）
+
+| # | 计划 | 实际 / 处理 |
+|---|---|---|
+| 1 | Task 1 删除旧 run | 用户要求延后；改为 Task 23 门禁清理，已在新体系校验通过后执行 |
+| 2 | `dirty_hash` 取全量 `git diff` | 排除 `reports/`、`data/`：否则镜像会改变指纹，重跑必换 `run_id`（S0a 发现） |
+| 3 | `STAGING_DIR = reports/.staging` | 实际 `reports/runs/.staging`（读取层跳过 `.` 目录）；文档已改 |
+| 4 | Task 5 只加 turnover/fees | 后补 equity 索引修复（bt bootstrap 行导致首行 NaN），1839 → 1838 行 |
+| 5 | `lag_correlation` 按 lag 升序 | 返回 `|lag|` 序（保证并列时 `idxmax` 命中 0）；调用方序列化前必须按 lag 升序重排 |
+| 6 | `ReportContext` 无 metrics | 增加 `metrics: dict`（Task 11 对账需要），缺键容忍 |
+| 7 | N9 beta 用原权重 | `risk_sleeve_relative` 权重 `.shift(1)`（T 日权重配 T+1 收益）；接受 |
+| 8 | `switch = hysteresis_held == False` | 两次收紧：先全持仓集合、后前三大核心持仓集合；`cross_asset` 加 1pp 阈值（编排者补）。最终 519 条事件 |
+| 9 | execution 最大偏差 <10%、extremes 残差 <5bp | 真实 open 执行下停牌顺延/隔夜跳空会产生离群值；改为看中位数并解释离群（14.1% / 12.4bp） |
+| 10 | 往返 5,000–12,000 | FIFO 按批次展开为 20,722；换手对账对象从 `notional/(2×nav)` 改为 `weights.diff()/2`（bt 单边口径，前者偏高 8.29%） |
+| 11 | `Σcandidate ≥ Σfinal` | 不成立（candidate 只是风险腿预算）；改为 `Σphases`、`Σhysteresis ≥ Σfinal` |
+| 12 | 缓存 float32、`off` 全关 | 改原 dtype（float32 会改变数值）；`off` = 只关读取仍写盘；增 `price_hash`、测试进程默认不写共享缓存 |
+| 13 | `n_trials` 按网格点、`family_id` 含全量身份 | `n_trials` 按去重 run；`family_id` 不含 `dirty_hash`（证据 family 必须在干净工作区生成） |
+| 14 | 8 个调参维度各自的候选值 | 补了 `bull_threshold 0.25/0.30/0.35`、`vol_target_risk 0.22/0.26/0.30`，因为初版没覆盖默认值；campaign trials 43 → 49 |
+| 15 | 20b 一个新基线 | 先产生 `57a92a2a80b2`（equity 修复前），修复后重建为 `e925fa0ee0d5`；最终只引用后者 |
+| 16 | Task 22 更新 spec §3.2 | 已补「实现状态 + 输出契约」说明 |
+| 17 | C3 单会话跑完 20a→20b | 会话把 13 步放后台后结束回合，后台进程被回收；`Start-Process` 脱离进程也被回收或孤儿化。编排者改为「受管后台 + `--keys` 分块」接管完成 |
+
+### 9.3 执行中新发现并修复的问题
+
+| # | 问题 | 影响 | 修复 |
+|---|---|---|---|
+| 1 | PowerShell 5.1 把无 BOM 的 `.ps1` 当 ANSI，中文注释吞换行 | `activate_data.ps1` 把基线拷到错误目录 | 脚本保持 ASCII 注释；写入计划 §6.5 |
+| 2 | worktree 未设 `PYTHONPATH` | 静默使用主仓库代码，测试结果不可信 | 脚本设 `PYTHONPATH=<worktree>/src`（`71752e6`） |
+| 3 | 文档用 `$PY` 调用 | PowerShell 报「不是可执行变量」 | 统一改 `& $env:PY` |
+| 4 | `load_prices` / `trading_days` 以读写方式打开 warehouse | 两个回测并发即撞 DuckDB 文件锁 | 改 `read_only=True`（`e08b158`） |
+| 5 | 生成物被 git 跟踪（`metrics.json`、HTML、sensitivity JSON） | 每次回测弄脏工作区 | `git rm --cached` + 补 `.gitignore` |
+| 6 | `reports/families/` 未忽略 | 网格产物出现在 `git status` | 补 `.gitignore` |
+| 7 | `verify` 把 40 个 pre-v2 目录判为错误 | 旧数据导致整体 exit 1 | 只校验带 `meta.parquet` 的 v2 run；真损坏仍点名（`c7f4300`） |
+| 8 | `verify` 对 minimal 档误报、指标重算容差 1e-6 过严 | cost/OOS 变体无法通过 | minimal 允许无产物；容差 0.5%（`076d1c1`） |
+| 9 | `parse_grid_spec` 的列表语法 | `[15,60],[21,60]` 不是合法 YAML | 改为 `[[15,60],[21,60],[30,90]]` |
+| 10 | `--only a,b,c` 不拆分 | 所有验收命令报未知 step | CLI 同时支持逗号与空格（`eb9e802`） |
+| 11 | `equity` 首行 `nav=NaN` | 下游首日/滚动统计被污染 | 按 nav 索引 reindex（`991c5f0`） |
+| 12 | campaign DSR 把 OOS/成本当 trial，且各 family 用自己的 n_obs | OOS family 的 `dsr_campaign` 被稀释到 0.47 | 只计 grid/ablation/assumption，n_obs 取全窗口最大（`f36712d`） |
+| 13 | 后台任务生命周期 | 长任务在回合结束时被回收 | 结论：长任务用受管后台或前台分块；假设敏感性加 `--keys`（`7b9df20`） |
+
+### 9.4 仍未收口 / 已知缺口
+
+- `reports/index.md` 未生成：`collect_runs.py` 只打印 family 摘要并写 `summary.json`，计划 Task 20a 里提到的全局索引还没实现（可用 `reports/families/*/summary.json` 代替）。
+- Hydra **3 个**变体并行未验证：C2 只验证了两个 worker 得到同一 `family_id`；并行安全的设计依据是「每个 run 只写自己的目录」。
+- `prune_runs` 的真实删除只在单测里验证过，生产上只跑过 `--dry-run`（当前全是 full 档，本就不该删）。
+- 8 个初始网格 family 的成员 run 产生于 equity 索引修复（`991c5f0`）之前：指标不受影响（`nav` 逐元素相同），但其 `equity.parquet` 首行多一个 NaN bootstrap 行；后补的 2 个网格与最终基线已用修复后代码。
+- `snapshot.hash_files` 的排序依赖完整路径（D1 观察）：把 bronze 复制到另一目录可能改变 `data_snapshot_id`。未修，当前数据目录固定。
+- `verify` 的指标重算容差为 0.5%（bt GroupStats 与 equity 重算是两条路径）；这是设计取舍，不是遗漏。
+- 报告前端渲染层（spec C0–C11 的 74 项图表）不在本计划范围；`reports/derived/` 数据已就绪。
+
+### 9.5 最终状态
+
+- 基线 run：`e925fa0ee0d5`（full 档）——9.61% / -15.79% / 0.877 / 0.608，45 项指标；10 个派生 step 全 `ok`，`peak_lag = 0`。
+- `reports/runs/`：52 个 v2 run；`reports/families/`：14 个（10 网格 + 消融 + 假设 + 成本 + OOS）。
+- campaign `tuning-2026-10`：49 个搜索 trial，`dsr_campaign = 0.9918`。
+- 全量测试：**251 passed**；`verify_artifacts.py` 对 52 个 run 无输出。
+- Task 23 已清理 40 个 pre-v2 目录，`warehouse.duckdb` 的 `runs`/`run_metrics` 已删除；清单在 `reports/legacy/old-runs.txt`。
+- 文档已更新：`reports/回测报告.md`、`reports/调参记录.md`、`AGENTS.md`、`TODO.md`、`CHANGELOG.md`、`README.md`、`docs/代码审阅手册.md`、report spec §3.2。
+- 未跟踪文件：`docs/superpowers/specs/2026-10-25-...frontend*.md` 来自另一个设计会话，本次未触碰。
+- 待用户裁决：H1 `trend.weighting=exp` 与 H7 `nasdaq_exit_threshold=-0.05` 是否采纳为默认（会改变数值，需重立基线）。

@@ -85,6 +85,8 @@
 
 ### 3.2 需要新增的计算（报告实现时补）
 
+> **实现状态（2026-10-25）**：N1–N13 已落地为 `etf_rotation.report` 的 10 个 step，输出 `reports/runs/{run_id}/derived/*.json` 并镜像到 `reports/derived/`（契约见主计划 §5）；`index.json` 绑定 `run_id` 与输入 sha256。N4 的 `switch` 口径为「前三大核心持仓集合变化」，N12 用 `residual` 承载执行时点差。
+
 | 编号 | 内容 | 依赖 | 优先级 |
 |---|---|---|---|
 | N1 | 基准对齐修正 + lag 扫描自检 | benchmark 生成逻辑 | P0（前置） |
