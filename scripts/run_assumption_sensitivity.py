@@ -47,7 +47,14 @@ def main() -> None:
                     default="minimal")
     ap.add_argument("--campaign", default="")
     ap.add_argument("--tag", default="")
+    ap.add_argument("--keys", nargs="*", default=None,
+                    help="只跑指定假设键（分块执行用；family 身份仍按完整 ASSUMPTIONS 计算）")
     args = ap.parse_args()
+
+    unknown = [k for k in (args.keys or []) if k not in ASSUMPTIONS]
+    if unknown:
+        ap.error(f"未知假设键 {unknown}，可选 {sorted(ASSUMPTIONS)}")
+    keys = list(ASSUMPTIONS) if not args.keys else list(args.keys)
 
     base = config.load_params()
     ctx = load_context()          # 数据面板只加载一次，所有变体共用
@@ -55,7 +62,7 @@ def main() -> None:
     data_snap = snapshot.data_snapshot_id()
 
     # 点序列：一次只变一个维度（18 个变体），不是笛卡尔积
-    points = [{key: value} for key, values in ASSUMPTIONS.items() for value in values]
+    points = [{key: value} for key in keys for value in ASSUMPTIONS[key]]
 
     base_flat = config.flatten_params(base)
     for key in ASSUMPTIONS:
@@ -131,7 +138,18 @@ def main() -> None:
         "family_id": out["family_id"],
         "generated": True,
     }
-    (ROOT / "reports" / "assumption_sensitivity.json").write_text(
+    # 分块执行（--keys）时只更新本次跑到的维度，其余维度保留上一次的逐行结果，
+    # 避免后一块把前一块的表格清空。
+    path = ROOT / "reports" / "assumption_sensitivity.json"
+    if args.keys and path.exists():
+        try:
+            previous = json.loads(path.read_text(encoding="utf-8"))
+        except ValueError:
+            previous = {}
+        for key, rows in grouped.items():
+            if not rows and isinstance(previous.get(key), list):
+                payload[key] = previous[key]
+    path.write_text(
         json.dumps(sweep.jsonable(payload), ensure_ascii=False, indent=2,
                    allow_nan=False), encoding="utf-8")
     print(json.dumps({"family_id": out["family_id"], "n_trials": out["n_trials"],
