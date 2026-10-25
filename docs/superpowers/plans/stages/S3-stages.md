@@ -45,7 +45,7 @@ tests/test_observability.py
 & $env:PY scripts\build_report_data.py --only stages
 ```
 
-预期：测试全绿；`signals/stages.parquet` 存在；每个事件 `Σfinal == diary.total_weight`；`Σcandidate ≥ Σfinal`；`nav` 与 `reports/legacy/v1.1.1/equity.csv` 完全一致（本任务不得改变任何数值）。
+预期：测试全绿；`signals/stages.parquet` 存在；每个事件 `Σfinal == diary.total_weight`；`Σphases ≥ Σfinal` 且 `Σhysteresis ≥ Σfinal`（**不要断言 `Σcandidate ≥ Σfinal`**：candidate 只是风险腿预算，defensive 会补到 ~1.0）；`nav` 与 `reports/legacy/v1.1.1/equity.csv` 完全一致（本任务不得改变任何数值）。
 
 ## 注意
 

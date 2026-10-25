@@ -1275,7 +1275,7 @@ def test_stage_table_limits_to_top10():
 .venv\Scripts\python.exe scripts\run_backtest.py 2019-01-01 2026-07-31 --save-profile full
 .venv\Scripts\python.exe scripts\build_report_data.py --only stages
 ```
-Expected: 每个事件 `Σfinal == diary.total_weight`；`Σcandidate ≥ Σfinal`。
+Expected: 每个事件 `Σfinal == diary.total_weight`；`Σphases ≥ Σfinal` 且 `Σhysteresis ≥ Σfinal`（这两步只减不加）。**不要断言 `Σcandidate ≥ Σfinal`**：`candidate` 是过热前的风险腿预算（中位数约 0.40），defensive 会把仓位补到约 1.0，差值是防守仓，不是漏算。
 
 - [ ] **Step 6: 提交**
 
