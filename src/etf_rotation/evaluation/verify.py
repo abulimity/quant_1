@@ -129,8 +129,12 @@ def verify(root: Path, run_id: str | None = None) -> list[str]:
             return [f"{run_id}: run 目录不存在于 {root}"]
         runs = [run_dir]
     else:
+        # 只校验 v2 登记（有 meta.parquet）。pre-v2 的旧 run 只有 manifest.json，
+        # 在 Task 23 清理前一直留在磁盘上，不能因此让 verify 整体失败。
+        # 有 artifacts.parquet 却没有 meta.parquet 的目录仍会被点名（真损坏）。
         runs = sorted(p for p in root.glob("*")
-                      if p.is_dir() and not p.name.startswith("."))
+                      if p.is_dir() and not p.name.startswith(".")
+                      and ((p / "meta.parquet").exists() or (p / "artifacts.parquet").exists()))
 
     problems: list[str] = []
     for run_dir in runs:

@@ -28,6 +28,14 @@ def main() -> None:
     args = parser.parse_args()
 
     root = Path(args.root) if args.root else RUNS_DIR
+    if args.run_id is None:
+        legacy = [p for p in Path(root).glob("*")
+                  if p.is_dir() and not p.name.startswith(".")
+                  and not (p / "meta.parquet").exists()
+                  and not (p / "artifacts.parquet").exists()]
+        if legacy:
+            print(f"跳过 {len(legacy)} 个 pre-v2 run（无 meta.parquet，待 Task 23 清理）",
+                  file=sys.stderr)
     problems = verify.verify(root, args.run_id)
     for message in problems:
         print(message)

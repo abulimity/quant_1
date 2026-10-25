@@ -221,3 +221,21 @@ def test_pruned_run_still_passes_verify(tmp_path):
     p = _old(tmp_path)
     prune.prune(tmp_path / "runs", dry_run=False)
     assert verify.verify(tmp_path / "runs", "old") == []
+
+
+def test_verify_skips_pre_v2_runs(tmp_path):
+    """pre-v2 的旧 run 只有 manifest.json：跳过，不让整体校验失败。"""
+    legacy = tmp_path / "runs" / "legacy01"
+    legacy.mkdir(parents=True)
+    (legacy / "manifest.json").write_text("{}", encoding="utf-8")
+    _store(tmp_path, run_id="v2", profile="standard")
+    assert verify.verify(tmp_path / "runs") == []
+
+
+def test_verify_reports_partial_v2_without_meta(tmp_path):
+    """有 artifacts.parquet 却没有 meta.parquet：真损坏，必须点名。"""
+    broken = tmp_path / "runs" / "broken01"
+    broken.mkdir(parents=True)
+    (broken / "artifacts.parquet").write_bytes(b"x")
+    problems = verify.verify(tmp_path / "runs")
+    assert any("broken01" in msg for msg in problems)
