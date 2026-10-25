@@ -45,7 +45,7 @@ tests/test_report_liquidity.py
 
 ## 注意
 
-- **先对账再写公式**：`equity["turnover"]` 的年度和要与 `trades.notional / (2 × nav)` 对得上（差异 > 5% 就停下，把口径写进提交说明）。`breakeven_bps` 的 `ann_one_side_turnover` 必须与这个口径一致。
+- **先对账再写公式**：`equity["turnover"]` 的年度和要与 `weights.diff().abs().sum(axis=1)/2` 对得上，**不要用 `trades.notional/(2×nav)`**（单边成交日会偏高，实测 +8.29%）。`breakeven_bps` 的 `ann_one_side_turnover` 必须与这个口径一致。
 - `ctx.metrics` 是 `{指标名: float}`，但 **NaN 指标可能整键缺失**（`all_stats` 会丢掉），一律用 `.get(k)`，缺键时输出 `None` 不要抛异常。
 - FIFO 必须支持分数份额与跨批次卖出；费用按份额比例摊到批次。
 - `capacity` 的 `capital` 单位是元，`amount` 也是元。

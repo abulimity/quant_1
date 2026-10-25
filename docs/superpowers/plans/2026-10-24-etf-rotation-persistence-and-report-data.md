@@ -1082,7 +1082,7 @@ def test_annual_drag_sums_daily_fee_flow():
 - [ ] **Step 3: 实现**
 
 `annual_cost_drag`：按年 `fees.sum()`；`avg_nav` 取当年 `nav` 均值；`drag_pct = fees / avg_nav`；`return_pct = nav_末/nav_初 − 1`；`cost_share_pct = fees / (return_pct × nav_初 + fees)`。
-`ann_one_side_turnover` 的口径必须与 `equity["turnover"]` 一致（计划前先写一条对账：`equity["turnover"]` 年度和 vs `trades.notional`/`2×nav`，差异 > 5% 就停下来查口径，不得硬写公式）。`breakeven_bps = (ann_return + annual_drag) / (2 × ann_one_side_turnover) × 1e4`，输出 `assumptions`。
+`ann_one_side_turnover` 的口径必须与 `equity["turnover"]` 一致。**对账对象是 `weights.diff().abs().sum(axis=1)/2`，不是 `trades.notional/(2×nav)`**：后者在单边成交日会系统性偏高（实测 +8.29%），因为 bt 的 turnover 是单边口径。`breakeven_bps = (ann_return + annual_drag) / (2 × ann_one_side_turnover) × 1e4`，输出 `assumptions`。
 同时输出 `reconciliation`：`trades.cost.sum()` 与 `metrics.total_fees` 的差值与相对误差。
 
 - [ ] **Step 4: 跑测试确认通过** → PASS
@@ -1203,7 +1203,7 @@ def test_fifo_sell_consumes_multiple_lots():
 - [ ] **Step 5: 真实数据**
 
 Run: `.venv\Scripts\python.exe scripts\build_report_data.py --only roundtrips`
-Expected: 往返数 5,000–12,000；胜率 40–60%；`Σpnl + 未平仓成本` 与 `(nav_末 − 1)` 的差值可由现金利息解释（写入 `summary.residual`）。
+Expected: 往返数 10,000–25,000（FIFO 按批次展开；22,433 笔成交对应 20,722 笔往返属正常）；胜率 40–60%；`Σpnl + 未平仓成本` 与 `(nav_末 − 1)` 的差值可由现金利息解释（写入 `summary.residual`）。
 
 - [ ] **Step 6: 提交**
 
@@ -1386,7 +1386,7 @@ def test_capacity_uses_cny_amount():
 - [ ] **Step 5: 真实数据**
 
 Run: `.venv\Scripts\python.exe scripts\build_report_data.py --only liquidity`
-Expected: `vs_open_bps` 中位数 ≈ 0；`vs_close_bps` 中位数在 ±20bp 内；容量 p95 清仓天数 < 5 天。
+Expected: `vs_open_bps` 中位数 ≈ 0；`vs_close_bps` 中位数在 ±20bp 内；**整体**容量 p95 清仓天数 < 5 天；2019–2021 可能因小 ETF 流动性超过 5 天（2019 年 p95 87 天），按年给出并解释，不设统一上限。
 
 - [ ] **Step 6: 提交**
 
