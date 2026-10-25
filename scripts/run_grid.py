@@ -1,89 +1,171 @@
 """单参数网格敏感性：一次只变一个维度。用法示例：
-scripts/run_grid.py --grid dedupe.corr_threshold=0.75,0.80,0.85
+
+    scripts/run_grid.py --grid dedupe.corr_threshold=0.75,0.80,0.85
+    scripts/run_grid.py --grid defensive.max_vol_60d=0.03,0.04 --save-profile minimal --campaign demo
+
+落盘契约（Task 19）：
+- 每个网格点一个 run（`reports/runs/{run_id}/`），kind="grid"；
+- 每个点登记一条 family 成员（`reports/families/{fid}/members/{run_id}.json`）；
+- sweep 结束后由本进程（单进程）生成 `families/{fid}/summary.json`；
+- `reports/grid.json` 变成 summary 的兼容镜像（带 `generated` 标记），不再手写。
+- 网格不写 `reports/latest.json`：基准位置只属于 `run_backtest`。
 """
 from __future__ import annotations
 
 import argparse
-import itertools
+import copy
 import json
+import sys
 from pathlib import Path
-
-import pandas as pd
 
 from etf_rotation.execution import shift_weights
 from etf_rotation import config
 from etf_rotation.backtest import run
-from etf_rotation.evaluation import metrics, overfitting, sensitivity
+from etf_rotation.data import snapshot
+from etf_rotation.evaluation import artifacts, metrics, registry, sensitivity, sweep
 from etf_rotation.pipeline import build_weights, load_context
+from etf_rotation.signals import cache
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(Path(__file__).resolve().parent))   # scripts 不是包
+from collect_runs import family_summary  # noqa: E402
 
 
 def main() -> None:
-    """单参数网格敏感性：一次只变一个维度（AGENTS.md 阶段目标 1）。
+    """笛卡尔积逐点建权 → bt 记账 → store_run → 登记 family → 写 summary 镜像。
 
-    对每个网格点重建权重并跑 bt，输出稳健性分数、悬崖检测与 DSR
-    多重检验校正；结果写 reports/grid.json。
+    与旧版的差异：不再调用 `registry.register_run`（已删除），也不再手写
+    `reports/grid.json`；身份、落盘、成员登记全部走 `sweep.run_sweep`。
     """
     ap = argparse.ArgumentParser()
-    ap.add_argument("--grid", action="append", required=True)
+    ap.add_argument("--grid", action="append", required=True,
+                    help="参数名=候选值1,候选值2（可重复，多维度做笛卡尔积）")
     ap.add_argument("--start", default="2019-01-01")
     ap.add_argument("--end", default="2026-07-31")
+    ap.add_argument("--execution", choices=["close", "open"], default="open")
+    ap.add_argument("--save-profile", choices=list(artifacts.SAVE_PROFILES),
+                    default="minimal")
+    ap.add_argument("--campaign", default="", help="campaign_id（DSR 跨 family 累计用）")
+    ap.add_argument("--tag", default="", help="自由标签，只写 meta，不参与身份")
     args = ap.parse_args()
 
     grid = {k: v for k, v in (sensitivity.parse_grid_spec(s) for s in args.grid)}
+    base = config.load_params()       # 基准参数：每个点都从这份干净副本出发
+    ctx = load_context()              # 数据面板只加载一次，所有网格点共用
+    gsha, dirty_hash = registry.git_info()
+    data_snap = snapshot.data_snapshot_id()
 
-    ctx = load_context()          # 数据面板只加载一次，所有网格点共用
-    close_all, opn_all = ctx["close"], ctx["opn"]
-    rows, sharpes, n_obs = [], [], 0
-    # 笛卡尔积逐点：每次只变一个维度（AGENTS.md 阶段目标 1）
-    for combo in itertools.product(*grid.values()):
-        params = dict(zip(grid.keys(), combo))
-        p = config.load_params()
-        # 逐个参数覆写（写后即 schema 校验，非法取值当场报错）
-        for k, val in params.items():
-            config.set_nested(p, k, str(val))
+    # 未参与网格的基准参数进入 family 身份，避免「同名网格、不同底参」串族
+    base_flat = config.flatten_params(base)
+    for key in grid:
+        base_flat.pop(key, None)
+    base_flat["_start"], base_flat["_end"] = args.start, args.end
+
+    def run_one(point: dict) -> tuple[dict, dict, dict]:
+        """单点：覆写参数 → 建权 → bt 记账 → 指标 + 产物面板。"""
+        p = copy.deepcopy(base)
+        for key, value in point.items():
+            config.set_nested(p, key, str(value))
         weights = build_weights(p, args.start, args.end, context=ctx)
-        close = close_all.reindex(index=weights.index, columns=weights.columns)
-        opn = opn_all.reindex(index=weights.index, columns=weights.columns)
-        eff = shift_weights.shift_weights(weights)  # T 日信号，T+1 生效
+        close = ctx["close"].reindex(index=weights.index, columns=weights.columns)
+        opn = ctx["opn"].reindex(index=weights.index, columns=weights.columns)
+        eff = shift_weights.shift_weights(weights)      # T 日信号，T+1 生效
         r = run.run(eff, opn, close,
                     cost_bps=p["costs"]["one_side_bps"],
-                    cash_rate=p["costs"]["cash_rate_annual"])
-        s = metrics.from_stats(r.stats)
-        sharpes.append(s["sharpe"])
-        n_obs = int(r.returns.notna().sum())  # 各网格点同区间，观测数一致
-        rows.append({**params, "sharpe": s["sharpe"], "max_drawdown": s["max_drawdown"],
-                     "ann_return": s["ann_return"], "calmar": s["calmar"]})
+                    cash_rate=p["costs"]["cash_rate_annual"],
+                    execution=args.execution,
+                    gap_delay_pct=p["execution"]["gap_delay_pct"])
+        s = metrics.all_stats(r.stats)
+        s["turnover"] = float(r.turnover.mean())
+        s["total_fees"] = float(r.fees.sum())
 
-    results = pd.DataFrame(rows)
-    n = len(rows)
-    # 三个维度的稳健性诊断：
-    #   robustness —— metric > 0 的组合占比（越高越不依赖特定参数）
-    #   cliffs     —— 悬崖检测（参数微调即崩 = 过拟合信号）
-    #   dsr        —— 多重检验校正后的显著性
-    out = {
-        "grid": grid, "results": rows, "n_trials": n,
-        "robustness": sensitivity.robustness_score(results),
-        "cliffs": sensitivity.detect_cliffs(results, list(grid)),
-        "dsr": overfitting.deflated_sharpe(sharpes, n, n_obs),
+        flat = config.flatten_params(p)
+        flat["_start"], flat["_end"] = args.start, args.end
+        meta = {
+            "schema_version": 2,
+            "params_json": flat,
+            "signal_id": cache.signal_id(flat, data_snap),
+            "git_sha": gsha,
+            "git_dirty": bool(dirty_hash),
+            "dirty_hash": dirty_hash,
+            "env_lock_hash": registry.env_lock_hash(),
+            "data_snapshot_id": data_snap,
+            "execution": args.execution,
+            "start": args.start,
+            "end": args.end,
+            "n_obs": int(r.returns.notna().sum()),
+        }
+        frames = {
+            "equity": metrics.build_equity_frame(r.nav, r.returns, r.cash,
+                                                 r.turnover, r.fees),
+            "weights": weights,
+            "holdings": r.positions,
+        }
+        return meta, s, frames
+
+    out = sweep.run_sweep(
+        points=sweep.iter_points(grid), run_one=run_one, kind="grid",
+        profile=args.save_profile, campaign_id=args.campaign, tag=args.tag,
+        runs_root=ROOT / "reports" / "runs",
+        families_root=ROOT / "reports" / "families",
+        git_sha=gsha, data_snapshot_id=data_snap,
+        start=args.start, end=args.end, execution=args.execution,
+        spec=grid, base_params=base_flat,
+    )
+    summary = family_summary(ROOT / "reports" / "families",
+                             ROOT / "reports" / "runs", out["family_id"])
+
+    # grid.json：summary 的兼容镜像（旧读法：grid/results/n_trials/robustness/
+    # cliffs/dsr）。dsr 指向 family 内校正；campaign 累计值只在 summary 里。
+    mirror = {
+        "grid": grid,
+        "results": summary["results"],
+        "n_trials": summary["n_trials"],
+        "robustness": summary["robustness"],
+        "cliffs": summary["cliffs"],
+        "dsr": summary["dsr_family"],
+        "sharpe_haircut": summary["sharpe_haircut"],
+        "family_id": out["family_id"],
+        "campaign_id": args.campaign,
+        "generated": True,
+        "generated_from": f"reports/families/{out['family_id']}/summary.json",
+        "generated_at": summary["generated"],
     }
-    # 汇总落盘：grid.json（全量）+ sensitivity/<key>.json（单维度）+ sensitivity_summary.json（跨维度）
     (ROOT / "reports" / "grid.json").write_text(
-        json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
+        json.dumps(sweep.jsonable(mirror), ensure_ascii=False, indent=2,
+                   allow_nan=False), encoding="utf-8")
+
+    # 单维度文件 + 跨维度汇总：保留旧路径，内容改为 summary 派生
+    key = sorted(grid)[0]
     sens_dir = ROOT / "reports" / "sensitivity"
     sens_dir.mkdir(exist_ok=True)
-    key = list(grid)[0]
     (sens_dir / f"{key.replace('.', '_')}.json").write_text(
-        json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
+        json.dumps(sweep.jsonable(mirror), ensure_ascii=False, indent=2,
+                   allow_nan=False), encoding="utf-8")
     summary_path = ROOT / "reports" / "sensitivity_summary.json"
-    summary = json.loads(summary_path.read_text(encoding="utf-8")) if summary_path.exists() else {}
-    summary[key] = {"n_trials": n, "robustness": out["robustness"],
-                    "cliffs": out["cliffs"], "dsr": out["dsr"],
-                    "sharpe_haircut": overfitting.sharpe_haircut(sharpes)}
-    summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(json.dumps({k: out[k] for k in ("n_trials", "robustness", "cliffs", "dsr")},
-                     ensure_ascii=False, indent=2))
+    summary_old = (json.loads(summary_path.read_text(encoding="utf-8"))
+                   if summary_path.exists() else {})
+    summary_old[key] = {
+        "n_trials": summary["n_trials"],
+        "robustness": summary["robustness"],
+        "cliffs": summary["cliffs"],
+        "dsr": summary["dsr_family"],
+        "sharpe_haircut": summary["sharpe_haircut"],
+        "family_id": out["family_id"],
+    }
+    summary_path.write_text(json.dumps(sweep.jsonable(summary_old), ensure_ascii=False,
+                                       indent=2, allow_nan=False), encoding="utf-8")
+
+    print(json.dumps({
+        "family_id": out["family_id"],
+        "n_trials": out["n_trials"],
+        "run_ids": out["run_ids"],
+        "robustness": summary["robustness"],
+        "cliffs": summary["cliffs"],
+        "dsr_family": summary["dsr_family"],
+        "dsr_campaign": summary["dsr_campaign"],
+        "summary": f"reports/families/{out['family_id']}/summary.json",
+    }, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

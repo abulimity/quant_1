@@ -1,76 +1,118 @@
-"""机制开关对照（ablation）：逐项关闭一个机制，登记结果，观察边际增量。"""
+"""机制开关对照（ablation）：逐项关闭一个机制，观察边际增量。
+
+每个变体一个 run（kind="ablation"）+ 一条 family 成员；baseline 与 5 个
+「关闭一个机制」共 6 个 trial。最后写 `reports/ablation.json` 兼容镜像
+（旧读法：行列表，每行 mechanism + 指标）。
+"""
 from __future__ import annotations
 
+import argparse
+import copy
 import json
+import sys
 from pathlib import Path
 
 from etf_rotation.execution import shift_weights
 from etf_rotation import config
 from etf_rotation.backtest import run
 from etf_rotation.data import snapshot
-from etf_rotation.evaluation import metrics, registry
+from etf_rotation.evaluation import artifacts, metrics, registry, sweep
 from etf_rotation.pipeline import build_weights, load_context
+from etf_rotation.signals import cache
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(Path(__file__).resolve().parent))   # scripts 不是包
+from collect_runs import family_summary  # noqa: E402
+
 MECHANISMS = ["phases", "hysteresis", "reversal", "overheat", "vol_cap"]
 KEYS = ("ann_return", "max_drawdown", "sharpe", "calmar", "turnover")
-
-
-def _run(p, start, end, ctx):
-    """跑一组参数并登记 run，返回该组的绩效指标字典。
-
-    步骤（每个 ablation 变体都走同一条路径，保证可比）：
-      ① 按参数 p 建目标权重面板（build_weights）
-      ② 把价格面板裁到权重面板的行列（reindex），避免多出无持仓的标的
-      ③ 权重整体 shift(1)：T 日信号、T+1 生效（与基准回测完全一致）
-      ④ bt 记账：open 口径成交 + 收盘估值，成本/现金利率取自参数
-      ⑤ 提取指标：ffn 统计 + 平均换手率
-      ⑥ 内容寻址登记：run_id = f(参数, git_sha, 数据快照, 执行口径)
-    """
-    weights = build_weights(p, start, end, context=ctx)
-    close = ctx["close"].reindex(index=weights.index, columns=weights.columns)
-    opn = ctx["opn"].reindex(index=weights.index, columns=weights.columns)
-    eff = shift_weights.shift_weights(weights)
-    r = run.run(eff, opn, close, cost_bps=p["costs"]["one_side_bps"],
-                cash_rate=p["costs"]["cash_rate_annual"], execution="open")
-    s = metrics.from_stats(r.stats)
-    s["turnover"] = float(r.turnover.mean())
-    flat = config.flatten_params(p)
-    flat["_start"], flat["_end"] = start, end
-    data_snap = snapshot.data_snapshot_id()
-    gsha = registry.git_sha()
-    run_id = registry.run_identity(flat, git_sha=gsha, data_snapshot_id=data_snap,
-                                   execution="open", signal_version=gsha)
-    registry.register_run(
-        ROOT / "data" / "warehouse.duckdb", run_id, flat, s, {},
-        data_snapshot_id=data_snap, git_sha=gsha, execution="open")
-    return s
+BASELINE = "baseline(all-on)"
 
 
 def main() -> None:
-    """机制开关对照（ablation）：逐项关闭一个机制，登记结果，观察边际增量。
+    """baseline（全开）+ 逐项关闭一个机制，其余保持默认。"""
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--start", default="2019-01-01")
+    ap.add_argument("--end", default="2026-07-31")
+    ap.add_argument("--execution", choices=["close", "open"], default="open")
+    ap.add_argument("--save-profile", choices=list(artifacts.SAVE_PROFILES),
+                    default="minimal")
+    ap.add_argument("--campaign", default="")
+    ap.add_argument("--tag", default="")
+    args = ap.parse_args()
 
-    对照设计：先跑 baseline（全部机制开启），再逐个把某个机制置为 False，
-    其余保持默认。每行与 baseline 的差值就是该机制的「边际贡献」。
-
-    输出：reports/ablation.json（每行含 ann_return / max_drawdown / sharpe /
-    calmar / turnover），并同步登记到 warehouse 的 runs 表。
-    """
-    start, end = "2019-01-01", "2026-07-31"
+    base = config.load_params()
     ctx = load_context()          # 数据面板只加载一次，所有变体共用
-    rows = []
-    # baseline：所有机制开启
-    s = _run(config.load_params(), start, end, ctx)
-    rows.append({"mechanism": "baseline(all-on)", **{k: s[k] for k in KEYS}})
-    for m in MECHANISMS:
-        # 逐项关闭一个机制（其余保持默认），观察该机制的边际增量
-        p = config.load_params()
-        p["mechanisms"][m] = False
-        s = _run(p, start, end, ctx)
-        rows.append({"mechanism": f"{m}=off", **{k: s[k] for k in KEYS}})
+    gsha, dirty_hash = registry.git_info()
+    data_snap = snapshot.data_snapshot_id()
+
+    points = [{"mechanism": BASELINE}, *({"mechanism": f"{m}=off"} for m in MECHANISMS)]
+    base_flat = config.flatten_params(base)
+    base_flat["_start"], base_flat["_end"] = args.start, args.end
+
+    def run_one(point: dict) -> tuple[dict, dict, dict]:
+        """单变体：baseline 全开；其余把对应机制置为 False 后跑完整链路。"""
+        p = copy.deepcopy(base)
+        label = point["mechanism"]
+        if label != BASELINE:
+            mechanism = label.split("=", 1)[0]
+            config.set_nested(p, f"mechanisms.{mechanism}", "false")
+        weights = build_weights(p, args.start, args.end, context=ctx)
+        close = ctx["close"].reindex(index=weights.index, columns=weights.columns)
+        opn = ctx["opn"].reindex(index=weights.index, columns=weights.columns)
+        eff = shift_weights.shift_weights(weights)
+        r = run.run(eff, opn, close, cost_bps=p["costs"]["one_side_bps"],
+                    cash_rate=p["costs"]["cash_rate_annual"],
+                    execution=args.execution,
+                    gap_delay_pct=p["execution"]["gap_delay_pct"])
+        s = metrics.all_stats(r.stats)
+        s["turnover"] = float(r.turnover.mean())
+        s["total_fees"] = float(r.fees.sum())
+
+        flat = config.flatten_params(p)
+        flat["_start"], flat["_end"] = args.start, args.end
+        meta = {
+            "schema_version": 2,
+            "params_json": flat,
+            "signal_id": cache.signal_id(flat, data_snap),
+            "git_sha": gsha,
+            "git_dirty": bool(dirty_hash),
+            "dirty_hash": dirty_hash,
+            "env_lock_hash": registry.env_lock_hash(),
+            "data_snapshot_id": data_snap,
+            "execution": args.execution,
+            "start": args.start,
+            "end": args.end,
+            "n_obs": int(r.returns.notna().sum()),
+        }
+        frames = {
+            "equity": metrics.build_equity_frame(r.nav, r.returns, r.cash,
+                                                 r.turnover, r.fees),
+            "weights": weights,
+            "holdings": r.positions,
+        }
+        return meta, s, frames
+
+    out = sweep.run_sweep(
+        points=points, run_one=run_one, kind="ablation",
+        profile=args.save_profile, campaign_id=args.campaign, tag=args.tag,
+        runs_root=ROOT / "reports" / "runs",
+        families_root=ROOT / "reports" / "families",
+        git_sha=gsha, data_snapshot_id=data_snap,
+        start=args.start, end=args.end, execution=args.execution,
+        spec={"mechanisms": MECHANISMS}, base_params=base_flat,
+    )
+    summary = family_summary(ROOT / "reports" / "families",
+                             ROOT / "reports" / "runs", out["family_id"])
+
+    rows = [{"mechanism": row.get("mechanism"),
+             **{key: row.get(key) for key in KEYS}}
+            for row in summary["results"]]
     (ROOT / "reports" / "ablation.json").write_text(
-        json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
+        json.dumps(sweep.jsonable(rows), ensure_ascii=False, indent=2,
+                   allow_nan=False), encoding="utf-8")
     print(json.dumps(rows, ensure_ascii=False, indent=2))
+    print(f"family {out['family_id']} -> reports/families/{out['family_id']}/summary.json")
 
 
 if __name__ == "__main__":
