@@ -1498,7 +1498,7 @@ def test_campaign_trials_sums_across_families(tmp_path):
 
 - [ ] **Step 3: 实现**
 
-`write_family_member` 的 `campaign_id` 写入成员文件的 `campaign_id` 字段；写入前 `members/` 目录按需创建；`load_family` 用 glob 收集并补 `n_trials`；`campaign_trials` 统计同 `campaign_id` 的成员文件数。
+`write_family_member` 的 `campaign_id` 写入成员文件的 `campaign_id` 字段；写入前 `members/` 目录按需创建；`load_family` 用 glob 收集并补 `n_trials`；`campaign_trials` 统计同 `campaign_id` 的成员文件数。**`n_trials` 按去重后的 run 计**（同一配置被多个维度重复选中算一次），逐点明细由 `sweep` 的 `trials` 保留。`family_id` 不含 `dirty_hash`，所以只有干净工作区生成的 family 才能作为证据（C3 在 main 干净状态下跑）；脏工作区的 family 只用于冒烟。
 `overfitting.deflated_sharpe(sharpes, n_trials, n_obs)` 签名不变，新增调用方式在 Task 19。
 
 - [ ] **Step 4: 跑测试确认通过** → PASS

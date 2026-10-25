@@ -23,6 +23,7 @@ reports/*.csv
 reports/*.parquet
 reports/*.baseline.*
 reports/runs/
+reports/families/
 reports/grid.json
 reports/attribution.json
 reports/ablation.json

@@ -56,3 +56,5 @@ tests/test_sweep.py
 - Hydra 的 `family_id` 必须由 cfg 确定性算出，worker 之间不通信。
 - 所有脚本里旧的 `registry.register_run(db_path, ...)` 调用要删掉。
 - `n_obs` 从 `r.returns.notna().sum()` 传入 meta。
+- `n_trials` 按去重后的 run 计（同一配置被重复选中算一次）；逐点明细放 `trials`。
+- `family_id` 不含 `dirty_hash`：冒烟可以脏，作为证据的 family 必须在干净工作区生成。
