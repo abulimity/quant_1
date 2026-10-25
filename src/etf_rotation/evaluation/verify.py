@@ -180,6 +180,7 @@ def _verify_run(run_dir: Path) -> list[str]:
     _check_fees(run_dir, rid, meta, metrics, intact, problems)
     _check_metrics_vs_equity(run_dir, rid, metrics, intact, problems)
     _check_derived(run_dir, rid, current, pruned, problems)
+    _check_derived_performance(run_dir, rid, metrics, problems)
     return problems
 
 
@@ -324,6 +325,31 @@ def _check_derived(run_dir: Path, rid: str, current: dict[str, str], pruned: boo
         problems.append(
             f"{rid}: derived/index.json 的 inputs 与当前产物不符（{'；'.join(detail)}）；"
             f"请重跑 build_report_data.py")
+
+
+def _check_derived_performance(run_dir: Path, rid: str,
+                               metrics: dict[str, float], problems: list[str]) -> None:
+    """`derived/performance.json` 的 summary.max_drawdown 必须与 metrics 一致。
+
+    metrics 缺 `max_drawdown` 或 performance.json 缺失/无 summary 时跳过
+    （旧格式或只跑了一部分 step 是合法中间态）。
+    """
+    if "max_drawdown" not in metrics:
+        return
+    path = run_dir / "derived" / "performance.json"
+    if not path.exists():
+        return
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    recorded = (payload.get("summary") or {}).get("max_drawdown")
+    if recorded is None:
+        return
+    if abs(float(recorded) - float(metrics["max_drawdown"])) > 1e-6:
+        problems.append(
+            f"{rid}: derived/performance.json 的 max_drawdown={recorded} 与 "
+            f"metrics {metrics['max_drawdown']} 不一致（派生版本过旧，请重算）")
 
 
 def has_errors(problems: list[str]) -> bool:

@@ -109,3 +109,14 @@ def test_incremental_only_keeps_only_same_run(tmp_path):
     idx_json = json.loads((run_dir / "derived" / "index.json").read_text(encoding="utf-8"))
     assert set(idx_json["steps"]) == {"performance"}
     assert idx_json["run_id"] == "r9"
+
+
+def test_build_reports_max_drawdown_summary():
+    idx = pd.date_range("2024-01-01", periods=5, freq="B")
+    nav = pd.Series([1.0, 1.1, 0.9, 1.2, 1.0], index=idx)
+    ctx = _ctx()
+    ctx.equity = pd.DataFrame({"nav": nav, "returns": nav.pct_change().fillna(0.0),
+                               "cash": 0.0, "turnover": 0.01, "fees": 0.0}, index=idx)
+    out = performance.build(ctx)
+    assert out["summary"]["max_drawdown"] == pytest.approx(0.9 / 1.1 - 1.0, abs=1e-12)
+    assert out["summary"]["n_days"] == 5

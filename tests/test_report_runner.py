@@ -98,3 +98,18 @@ def test_mirror_derived_removes_stale_files(tmp_path):
     runner.mirror_derived(derived, mirror)
     assert (mirror / "index.json").exists()
     assert not (mirror / "old_step.json").exists()
+
+
+def test_only_does_not_carry_old_derived_version(tmp_path):
+    run_dir = tmp_path / "r1"
+    derived = run_dir / "derived"
+    derived.mkdir(parents=True)
+    old_index = {"schema_version": 1, "derived_version": 1, "run_id": "r1",
+                 "generated_at": "x", "data_snapshot_id": "d1", "inputs": {},
+                 "steps": {"old_step": {"ok": True, "duration_ms": 1, "error": None}}}
+    (derived / "index.json").write_text(json.dumps(old_index), encoding="utf-8")
+    (derived / "old_step.json").write_text("{}", encoding="utf-8")
+    runner.run(run_dir, _ctx(), only=["alignment"])
+    assert not (run_dir / "derived" / "old_step.json").exists()
+    idx = json.loads((run_dir / "derived" / "index.json").read_text(encoding="utf-8"))
+    assert idx["derived_version"] == 2

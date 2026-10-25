@@ -164,6 +164,8 @@ def build(ctx: ReportContext) -> dict:
     nav = ctx.equity["nav"].dropna()
     returns = ctx.equity["returns"]
     return {
+        "summary": {"max_drawdown": float(underwater(nav).min()),
+                    "n_days": int(len(nav))},
         "underwater": series(underwater(nav), name="values"),
         "episodes": records(episodes(nav), index=None),
         "annual": records(annual_table(ctx.equity), index=None),

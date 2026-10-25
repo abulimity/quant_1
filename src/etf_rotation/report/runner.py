@@ -33,7 +33,7 @@ from etf_rotation.report.context import ReportContext
 
 # 派生数据自身的 schema 版本（与 run 的 meta.schema_version 无关）
 INDEX_SCHEMA_VERSION = 1
-DERIVED_VERSION = 1
+DERIVED_VERSION = 2
 
 INDEX_NAME = "index.json"
 
@@ -172,8 +172,14 @@ def _read_index(derived: Path) -> dict | None:
 
 
 def _same_run(index: dict | None, run_id: str, inputs: dict[str, str]) -> bool:
-    """旧 index 是否属于同一个 run 的同一批产物（inputs 哈希逐项一致）。"""
-    return bool(index) and index.get("run_id") == run_id and index.get("inputs") == inputs
+    """旧 index 是否属于同一个 run 的同一批产物（inputs 哈希逐项一致）。
+
+    `derived_version` 必须一致：step 的输出契约升级后（如 performance 加 summary），
+    旧格式的 step 文件不能靠 `--only` 继承，否则同 run 同 inputs 会混入旧 schema。
+    """
+    return bool(index) and index.get("run_id") == run_id \
+        and index.get("inputs") == inputs \
+        and index.get("derived_version") == DERIVED_VERSION
 
 
 def _carry_over(derived: Path, tmp: Path, run_id: str, inputs: dict[str, str]) -> set[str]:

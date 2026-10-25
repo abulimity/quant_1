@@ -285,3 +285,15 @@ def test_has_errors_filters_warnings():
     assert verify.has_errors(["WARN x"]) is False
     assert verify.has_errors(["real problem"]) is True
     assert verify.has_errors(["WARN x", "real"]) is True
+
+
+def test_verify_flags_derived_max_drawdown_mismatch(tmp_path):
+    nav = _nav()
+    metrics = _metrics(nav)
+    metrics["max_drawdown"] = -0.05
+    p = _store(tmp_path, metrics=metrics)
+    _write_index(p, _artifact_hashes(p))
+    (p / "derived/performance.json").write_text(
+        '{"summary": {"max_drawdown": -0.5, "n_days": 6}}', encoding="utf-8")
+    problems = verify.verify(tmp_path / "runs", "r1")
+    assert any("max_drawdown" in msg for msg in problems)
