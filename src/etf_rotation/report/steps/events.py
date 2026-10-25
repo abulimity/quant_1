@@ -3,8 +3,11 @@
 判定规则（唯一的判定入口是 `_event_masks`，`event_dates` 与 `rebalance_events`
 共用，禁止两处各写一套 —— S3 / Task 14 会直接调用 `event_dates`）：
 
-    switch      —— 持仓集合变化：`held_set_t = {ticker | w_{ticker,t} >= 0.005}`，
-                   `held_set_t != held_set_{t−1}` 即为换仓（首日无前值，不算 switch）
+    switch      —— **核心持仓集合变化**：先取 `w >= 0.005` 的标的，
+                   再按权重取前 3 名，`core_t = top3(w_t)`；
+                   `core_t != core_{t−1}` 即为换仓（首日无前值，不算 switch）。
+                   小成员进出不计入（策略几乎每天都有边缘仓位调整），
+                   报告口径只关心核心持仓的更替。
     overheat    —— `n_overheat_exits > 0`（当日有标的被单 ETF 过热规则清零）
     vol_cap     —— `vol_cap_scale < 1`（组合波动触顶，按比例缩放仓位）
     defensive   —— `n_defensive` 相对前一日发生变化
@@ -12,7 +15,7 @@
 
 `hysteresis_held` 不再单独定义 switch：五相位平滑下它几乎每天为 False（「候选
 得分 > 旧组合得分」），把它当换仓会让每个交易日都成为事件。它只保留在
-`triggers` 快照里供审阅；真正有经济含义的换仓是**持仓集合**发生变化。
+`triggers` 快照里供审阅；真正有经济含义的换仓是**前 3 大持仓**发生更替。
 
 口径与索引语义：
 - 事件日期 = **信号日 T**（`diary` / 目标 `weights` 的索引），实际成交在 T+1；
@@ -42,6 +45,8 @@ TYPE_ORDER = ("switch", "overheat", "vol_cap", "defensive", "cross_asset")
 _DW_TOL = 1e-9
 # 持仓集合的纳入阈值：权重 >= 0.5% 才算「持有」（低于此视为残渣仓位）
 _HELD_TOL = 0.005
+# 核心持仓口径：在达标标的里按权重取前 N 名；只有前 N 名更替才算换仓
+_TOP_N = 3
 # vol_cap_scale 小于该值才视为缩放（1.0 与 0.9999999999 不是同一个事件）
 _SCALE_TOL = 1e-9
 # 事后收益窗口（交易日）
@@ -61,11 +66,21 @@ def _change(series: pd.Series) -> pd.Series:
 
 
 def _held_sets(weights: pd.DataFrame, index: pd.Index) -> pd.Series:
-    """逐日持仓集合 `{ticker | w >= 0.005}`（index = 事件日历，值为 frozenset）。"""
+    """逐日核心持仓集合：`w >= 0.005` 的标的里按权重取前 3（index = 事件日历）。
+
+    返回 Series（值为 frozenset）。并列权重按列顺序稳定取（`kind="stable"`），
+    保证同一份权重在两次运行中得到同一集合。
+    """
     w = pd.DataFrame(weights).sort_index().astype("float64").reindex(index=index)
     columns = np.asarray(w.columns, dtype=object)
     values = w.to_numpy(dtype="float64")
-    sets = [frozenset(columns[row >= _HELD_TOL]) for row in values]
+    sets = []
+    for row in values:
+        eligible = np.flatnonzero(row >= _HELD_TOL)   # NaN 比较为 False，自动排除
+        if eligible.size > _TOP_N:
+            ranked = eligible[np.argsort(-row[eligible], kind="stable")]
+            eligible = ranked[:_TOP_N]
+        sets.append(frozenset(columns[eligible]))
     return pd.Series(sets, index=index, dtype=object)
 
 
