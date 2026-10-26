@@ -342,6 +342,7 @@ details pre{border:0;border-top:1px solid var(--line);margin:0;max-height:420px}
             <span class="acts"><button class="btn sm" id="btnPrintC1">打印本页</button></span>
           </div>
           <div class="coregrid" id="navddStats"></div>
+          <div class="panel-b tight"><div class="chart" id="navddChart" style="height:240px"></div></div>
         </div>
       </div>
     </section>
@@ -381,6 +382,7 @@ details pre{border:0;border-top:1px solid var(--line);margin:0;max-height:420px}
               <span class="hint"><select class="inp" id="eventType"><option value="">全部类型</option></select></span>
             </div>
             <div class="panel-b" style="padding-top:0"><div id="eventTable"></div></div>
+            <div class="panel-b tight"><div class="chart" id="eventChart" style="height:220px"></div></div>
             <div class="panel-b" style="padding-top:0"><div class="note">事件行可点击 → 下方四步详情；关键事件同时以菱形标注在 D04 净值曲线上。事后 5/20 日收益只用于复盘评价，不参与决策。</div></div>
           </div>
         </div>
@@ -497,7 +499,7 @@ details pre{border:0;border-top:1px solid var(--line);margin:0;max-height:420px}
         <div class="g2"><div class="panel"><div class="panel-h"><span class="id">T08</span><h3>假设敏感性</h3><span class="hint">H1 趋势权重 / H7 纳指退出等</span></div><div class="panel-b"><div id="assumeTable"></div></div></div></div>
         <div class="g12"><div class="panel"><div class="panel-h"><span class="id">T05</span><h3>单参数敏感性</h3><span class="hint">平台 / 悬崖 · 默认点标注</span></div><div class="panel-b"><div class="sweeps" id="sweeps"></div></div><div class="panel-b" style="padding-top:0"><div class="note">参数扫描为 2026-10-17 close 口径旧批次（默认点 Sharpe 1.039），与当前 open 口径 0.877 不可直接比绝对值；这里只读 ΔSharpe 形状。</div></div></div></div>
         <div class="g12"><div class="panel"><div class="panel-h"><span class="id">T06</span><h3>DSR / Sharpe haircut</h3><span class="hint">门槛 0.95</span></div><div class="panel-b"><div id="dsrCard"></div></div></div></div>
-        <div class="g12"><div class="panel"><div class="panel-h"><span class="id">T07</span><h3>corr × cost 热力图</h3><span class="hint">旧批次 · Sharpe</span></div><div class="panel-b tight"><div class="chart" id="grid2d" style="height:360px"></div></div></div></div>
+        <div class="g12"><div class="panel"><div class="panel-h"><span class="id">T07</span><h3>corr × cost 热力图</h3><span class="tag warn">脏工作区 仅参考</span><span class="hint">旧批次 · Sharpe</span></div><div class="panel-b tight"><div class="chart" id="grid2d" style="height:360px"></div></div></div></div>
         <div class="g2"><div class="panel"><div class="panel-h"><span class="id">T09</span><h3>已知问题</h3><span class="hint">缺陷必须可见</span></div><div class="panel-b"><div id="issuesList"></div></div></div></div>
         <div class="g2"><div class="panel"><div class="panel-h"><span class="id">T10</span><h3>与研报差距</h3><span class="hint">只做数字对照</span></div><div class="panel-b"><div id="gapTable"></div></div><div class="panel-b" style="padding-top:0"><div class="note">研报：20.74% / −10.13% / Sharpe 2.05。当前值与差值由报告产物计算；原因不在本报告范围内。</div></div></div></div>
       </div>
