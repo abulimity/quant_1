@@ -62,3 +62,6 @@ desktop.ini
 .archify/
 .acl-recovery/
 
+# Front-design deliverables (prototype archive too large for git)
+reports/front-design/*.zip
+
