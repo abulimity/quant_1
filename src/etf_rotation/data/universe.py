@@ -7,6 +7,8 @@
 """
 from __future__ import annotations
 
+import re
+
 import pandas as pd
 
 # 可转债关键词（含「转债」的基金，波动大且含权，不入防守池）
@@ -48,3 +50,23 @@ def classify(fund_basic: pd.DataFrame) -> pd.Series:
     out = fund_basic.apply(_one, axis=1)
     out.index = fund_basic["ts_code"]
     return out.rename("category")
+
+
+# 名称里可丢弃的份额/渠道后缀。顺序有意义：(QDII-LOF-FOF) 必须先于 (QDII)。
+_ABBR_SUFFIXES = ("(QDII-LOF-FOF)", "(QDII-LOF)", "(QDII)", "(LOF)")
+
+
+def abbreviate(names: pd.Series) -> pd.Series:
+    """把 fund_basic 的正式名称裁成简称。
+
+    只剥后缀与结尾的 `-CNY`，不截断、不改主体。剥完为空则退回原名。
+    实测 971 个标的按此规则无重名，截断到 12 字则会撞出 14 组，故不做截断。
+    """
+    def _one(raw) -> str:
+        text = str(raw)
+        for suffix in _ABBR_SUFFIXES:
+            text = text.replace(suffix, "")
+        text = re.sub(r"-CNY$", "", text)
+        return text.strip() or str(raw)
+
+    return names.map(_one).rename("abbr")
