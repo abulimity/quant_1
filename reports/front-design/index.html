@@ -545,6 +545,8 @@ var STATUS = { candidate: "候选", held_risk: "风险持仓", defensive: "防�
 var TYPE_CLR = { "换仓": CLR.blue, "过热清零": CLR.red, "波动上限缩放": CLR.amber, "防守重选": CLR.cyan, "跨资产腿切换": CLR.purple };
 
 function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]; }); }
+function nm(c) { var n = D && D.names ? D.names[c] : null; return n || String(c == null ? "" : c); }
+function nmHtml(c) { return '<span title="' + esc(c) + '">' + esc(nm(c)) + "</span>"; }
 function pct(x, d) { return x == null || isNaN(x) ? "—" : (x * 100).toFixed(d == null ? 2 : d) + "%"; }
 function sgnPct(x, d) { if (x == null || isNaN(x)) return "—"; return (x >= 0 ? "+" : "") + (x * 100).toFixed(d == null ? 2 : d) + "%"; }
 function pp(x, d) { return x == null || isNaN(x) ? "—" : (x >= 0 ? "+" : "") + (x * 100).toFixed(d == null ? 2 : d) + "pp"; }
@@ -1047,8 +1049,8 @@ function linkNavDD() {
 
 window.OD = {
   D: D, S: S, DATES: DATES, N: N, CLR: CLR, CLS: CLS, CLR_CLS: CLR_CLS, REG: REG, STATUS: STATUS,
-  TYPE_CLR: TYPE_CLR, RANGE: RANGE, state: state, B: {}, TABLES: {},
-  $: $, $$: $$, esc: esc, pct: pct, sgnPct: sgnPct, pp: pp, num: num, sgn: sgn, bps: bps, clsOf: clsOf,
+  TYPE_CLR: TYPE_CLR, RANGE: RANGE, state: state, B: {}, TABLES: {}, TBL: TBL,
+  $: $, $$: $$, esc: esc, nm: nm, nmHtml: nmHtml, pct: pct, sgnPct: sgnPct, pp: pp, num: num, sgn: sgn, bps: bps, clsOf: clsOf,
   fmtBy: fmtBy, dt: dt, nd: nd, idxOf: idxOf, nearest: nearest, mean: mean, std: std, sum: sum,
   RG: RG, sl: sl, rangeDates: rangeDates, setRange: setRange, rangeStats: rangeStats,
   LAY: LAY, axis: axis, plot: plot, bandShapes: bandShapes,
