@@ -47,11 +47,21 @@ def test_never_returns_empty_and_keeps_index():
 
 
 def test_null_or_non_string_name_does_not_become_literal_nan():
-    """缺名或非字符串名称不能返回字符串 "nan"，否则看板会原样显示 nan。"""
-    raw = pd.Series({"A.SH": None, "B.SZ": float("nan"), "C.SH": "正常名称"})
+    """缺名或非字符串名称必须变成空串，不能返回 "nan" 之类的字符串。
+
+    只断言 "nan" not in out 太弱：None / NaN / N/A / nat 都能溜过去。
+    改为精确断言返回值，再补一条覆盖所有常见「字符串化的空值」。
+    """
+    raw = pd.Series({"A.SH": None, "B.SZ": float("nan"), "C.SH": "正常名称", "D.SH": 12345})
     out = abbreviate(raw)
-    assert "nan" not in list(out)
+    assert out["A.SH"] == "", f"None 应变成空串，实际 {out['A.SH']!r}"
+    assert out["B.SZ"] == "", f"NaN 应变成空串，实际 {out['B.SZ']!r}"
+    assert out["D.SH"] == "", f"非字符串应变成空串，实际 {out['D.SH']!r}"
     assert out["C.SH"] == "正常名称"
+    # 任何「字符串化的空值」都不允许出现，大小写与常见写法都覆盖
+    bad = {"nan", "none", "nat", "null", "n/a", "na", "<na>"}
+    leaked = [v for v in out if str(v).strip().lower() in bad]
+    assert not leaked, f"出现了字符串化的空值：{leaked}"
 
 
 def test_abbreviations_unique_within_dashboard_universe():
