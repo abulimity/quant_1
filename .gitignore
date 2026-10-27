@@ -62,6 +62,9 @@ desktop.ini
 .archify/
 .acl-recovery/
 
+# OpenChamber local scratch (screenshots / session probes)
+.openchamber/
+
 # Front-design deliverables (prototype archive too large for git)
 reports/front-design/*.zip
 
