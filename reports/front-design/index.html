@@ -783,7 +783,7 @@ function Tbl(mount, cfg) {
   paint();
   function filtered() {
     var rows = cfg.rows || [], q = inst.q.trim().toLowerCase();
-    if (q) rows = rows.filter(function (r) { return (cfg.cols || []).some(function (c) { var v = typeof c.k === "function" ? c.k(r) : r[c.k]; return String(v == null ? "" : v).toLowerCase().indexOf(q) >= 0; }); });
+    if (q) rows = rows.filter(function (r) { return (cfg.cols || []).some(function (c) { var v = typeof c.k === "function" ? c.k(r) : r[c.k]; var hay = String(v == null ? "" : v); if (c.code) hay += " " + nm(v); return hay.toLowerCase().indexOf(q) >= 0; }); });
     if (inst.sort) {
       var c = inst.sort;
       rows = rows.slice().sort(function (a, b) {
@@ -807,8 +807,13 @@ function Tbl(mount, cfg) {
       return '<tr class="' + (cfg.onRow ? "click " : "") + (cfg.rowClass ? cfg.rowClass(r) : "") + '" data-r="' + (inst.page * ps + ri) + '">' + cols.map(function (c) {
         var v = typeof c.k === "function" ? c.k(r) : r[c.k];
         var txt = c.fmt ? (typeof c.fmt === "function" ? c.fmt(v, r) : fmtBy(c.fmt, v)) : (v == null ? "—" : esc(v));
+        var ttl = "";
+        if (c.code) {
+          if (c.code === "both") { txt = esc(nm(v)) + " " + esc(v); ttl = nm(v); }
+          else { txt = esc(nm(v)); ttl = String(v); }
+        }
         var klass = (c.num ? "num " : "") + (typeof c.cls === "function" ? c.cls(v, r) : (c.cls || "")) + (c.wrap ? " wrap" : "");
-        return "<td class='" + klass.trim() + "'>" + txt + "</td>";
+        return "<td class='" + klass.trim() + "'" + (ttl ? ' title="' + esc(ttl) + '"' : "") + ">" + txt + "</td>";
       }).join("") + "</tr>";
     }).join("");
     if (!rows.length) body = '<tr><td colspan="' + cols.length + '" class="empty">无符合条件的数据</td></tr>';
@@ -830,7 +835,8 @@ function csv(cfg) {
   rows.forEach(function (r) {
     lines.push(cols.map(function (c) {
       var v = typeof c.k === "function" ? c.k(r) : r[c.k];
-      if (c.csv) v = c.csv(v, r);
+      if (c.code) { v = c.code === "both" ? nm(v) + " " + v : nm(v) + " (" + v + ")"; }
+      else if (c.csv) v = c.csv(v, r);
       else if (c.fmt) v = typeof c.fmt === "function" ? String(c.fmt(v, r)).replace(/<[^>]+>/g, "") : fmtBy(c.fmt, v);
       return '"' + String(v == null ? "" : v).replace(/"/g, '""') + '"';
     }).join(","));
@@ -877,14 +883,14 @@ function updateDetail() {
   function addList(title, arr, sign) {
     if (!arr || !arr.length) return "";
     return '<div class="mini" style="margin-top:6px"><b style="color:var(--text2)">' + title + "</b></div><ul class=\"dlist\">" + arr.slice(0, 6).map(function (x) {
-      return '<li><span class="t">' + esc(x.t) + '</span><span class="d ' + (sign > 0 ? "pos" : "neg") + '">' + sgnPct(x.d) + ' <span class="dim">' + pct(x.from_, 2) + "→" + pct(x.to, 2) + "</span></span></li>";
+      return '<li><span class="t" title="' + esc(x.t) + '">' + esc(nm(x.t)) + '</span><span class="d ' + (sign > 0 ? "pos" : "neg") + '">' + sgnPct(x.d) + ' <span class="dim">' + pct(x.from_, 2) + "→" + pct(x.to, 2) + "</span></span></li>";
     }).join("") + "</ul>";
   }
   changes.push(addList("新增", d.adds, 1)); changes.push(addList("加仓", d.inc, 1)); changes.push(addList("减仓", d.dec, -1)); changes.push(addList("清仓", d.exits, -1));
-  var preRows = (d.pre || []).map(function (x) { return '<tr><td class="mono">' + esc(x.t) + "</td><td>" + (CLS[x.cls] || x.cls) + '</td><td class="num">' + pct(x.w, 2) + "</td></tr>"; }).join("");
-  var postRows = (d.post || []).map(function (x) { return '<tr><td class="mono">' + esc(x.t) + "</td><td>" + (CLS[x.cls] || x.cls) + '</td><td class="num">' + pct(x.w, 2) + "</td></tr>"; }).join("");
-  var trRows = (d.trades || []).map(function (x) { return '<tr><td class="mono">' + esc(x.t) + '</td><td class="' + (x.side === "B" ? "pos" : "neg") + '">' + (x.side === "B" ? "买" : "卖") + '</td><td class="num">' + num(x.p, 4) + '</td><td class="num">' + num(x.n, 4) + '</td><td class="num">' + num(x.c, 6) + "</td></tr>"; }).join("");
-  var dev = (d.postDev || []).map(function (x) { return '<li><span class="t">' + esc(x.t) + '</span><span class="d">' + pct(x.v, 2) + "</span></li>"; }).join("");
+  var preRows = (d.pre || []).map(function (x) { return '<tr><td class="mono" title="' + esc(x.t) + '">' + esc(nm(x.t)) + "</td><td>" + (CLS[x.cls] || x.cls) + '</td><td class="num">' + pct(x.w, 2) + "</td></tr>"; }).join("");
+  var postRows = (d.post || []).map(function (x) { return '<tr><td class="mono" title="' + esc(x.t) + '">' + esc(nm(x.t)) + "</td><td>" + (CLS[x.cls] || x.cls) + '</td><td class="num">' + pct(x.w, 2) + "</td></tr>"; }).join("");
+  var trRows = (d.trades || []).map(function (x) { return '<tr><td class="mono" title="' + esc(x.t) + '">' + esc(nm(x.t)) + '</td><td class="' + (x.side === "B" ? "pos" : "neg") + '">' + (x.side === "B" ? "买" : "卖") + '</td><td class="num">' + num(x.p, 4) + '</td><td class="num">' + num(x.n, 4) + '</td><td class="num">' + num(x.c, 6) + "</td></tr>"; }).join("");
+  var dev = (d.postDev || []).map(function (x) { return '<li><span class="t" title="' + esc(x.t) + '">' + esc(nm(x.t)) + '</span><span class="d">' + pct(x.v, 2) + "</span></li>"; }).join("");
   var typeTags = e.types.map(function (t) { return '<span class="tag" style="border-color:' + (TYPE_CLR[t] || CLR.gray) + '55;color:' + (TYPE_CLR[t] || CLR.gray) + '">' + esc(t) + "</span>"; }).join("");
   box.innerHTML = '<div class="detail"><div class="dhead">' +
     '<span class="date mono">' + e.date + "</span>" + typeTags +
@@ -909,7 +915,7 @@ function updateCand() {
   var rows = D.candidates[state.date] || [];
   Tbl("#candTable", {
     cols: [
-      { k: 2, label: "#", num: true }, { k: 0, label: "标的", cls: "mono" },
+      { k: 2, label: "#", num: true }, { k: 0, label: "标的", cls: "mono", code: true },
       { k: 1, label: "score", fmt: "num3", num: true }, { k: 3, label: "权重", fmt: "pct", num: true },
       { k: 4, label: "状态", fmt: function (v) { return '<span class="tag">' + (STATUS[v] || v) + "</span>"; } },
       { k: 5, label: "去留", cls: "wrap" }, { k: 6, label: "剔除原因", cls: "wrap" }
@@ -927,7 +933,7 @@ function fitSignal() {
 }
 function updateHold() {
   var rows = (D.holdingsTop[idxOf(state.date)] || []).map(function (x, i) { return { r: i + 1, t: x[0], w: x[1], cls: clsOfTicker(x[0]) }; });
-  Tbl("#holdTable", { cols: [{ k: "r", label: "#", num: true }, { k: "t", label: "标的", cls: "mono" }, { k: "w", label: "权重", fmt: "pct", num: true }, { k: "cls", label: "类别", fmt: function (v) { return CLS[v] || v; } }], rows: rows, page: 10, csv: "holdings_" + state.date });
+  Tbl("#holdTable", { cols: [{ k: "r", label: "#", num: true }, { k: "t", label: "标的", cls: "mono", code: "both" }, { k: "w", label: "权重", fmt: "pct", num: true }, { k: "cls", label: "类别", fmt: function (v) { return CLS[v] || v; } }], rows: rows, page: 10, csv: "holdings_" + state.date });
 }
 function clsOfTicker(t) {
   var row = (D.topPnl || []).filter(function (x) { return x.t === t; })[0] || (D.tickers || []).filter(function (x) { return x.t === t; })[0];
@@ -1054,7 +1060,7 @@ window.OD = {
   fmtBy: fmtBy, dt: dt, nd: nd, idxOf: idxOf, nearest: nearest, mean: mean, std: std, sum: sum,
   RG: RG, sl: sl, rangeDates: rangeDates, setRange: setRange, rangeStats: rangeStats,
   LAY: LAY, axis: axis, plot: plot, bandShapes: bandShapes,
-  Tbl: Tbl, tableMounts: tableMounts, renderKpis: renderKpis, drawAll: drawAll,
+  Tbl: Tbl, csv: csv, tableMounts: tableMounts, renderKpis: renderKpis, drawAll: drawAll,
   selectDate: selectDate, setTicker: setTicker, currentEvent: currentEvent, eventByIndex: eventByIndex,
   updateDetail: updateDetail, updateCand: updateCand, updateHold: updateHold,
   clsOfTicker: clsOfTicker, syncUrl: syncUrl, boot: boot
@@ -1098,7 +1104,7 @@ function extremeRows() {
   arr.sort(function (a, b) { return b[1] - a[1]; });
   var picks = arr.slice(0, 10).concat(arr.slice(-10).reverse());
   cache.extreme = picks.map(function (p) {
-    var i = p[0], hold = (D.holdingsTop[i] || []).slice(0, 3).map(function (h) { return h[0] + " " + pct(h[1], 1); }).join(" · ");
+    var i = p[0], hold = (D.holdingsTop[i] || []).slice(0, 3).map(function (h) { return O.nm(h[0]) + " " + h[0] + " " + pct(h[1], 1); }).join(" · ");
     var best = "—", bv = 0;
     if (D.contribution && D.contribution.daily) {
       D.contribution.classes.forEach(function (k) {
@@ -1182,7 +1188,7 @@ T.eventTable = function () {
   rows = rows.slice().sort(function (a, b) { return a.date < b.date ? 1 : -1; }).map(function (e) {
     return {
       date: e.date, types: e.types.join(" / "), primary: e.primary, regime: regCn(e.regime), turnover: e.turnover,
-      chg: e.changes.slice(0, 3).map(function (c) { return c.t + " " + sgnPct(c.d); }).join(" · ") || "—",
+      chg: e.changes.slice(0, 3).map(function (c) { return O.nm(c.t) + " " + c.t + " " + sgnPct(c.d); }).join(" · ") || "—",
       rule: e.rule, fwd5: e.fwd5, fwd20: e.fwd20, n: e.detail ? e.detail.n_trades : null
     };
   });
@@ -1300,7 +1306,7 @@ T.statePerf = function () {
 T.topPnlTable = function () {
   return {
     cols: [
-      { k: "t", label: "标的", cls: "mono" },
+      { k: "t", label: "标的", cls: "mono", code: true },
       { k: "cls", label: "类别", fmt: function (v) { return CLS[v] || v; } },
       { k: "pnl", label: "已实现盈亏", fmt: "pct2", num: true, cls: function (v) { return O.clsOf(v); } },
       { k: "trades", label: "交易次数", fmt: "int", num: true },
@@ -1315,7 +1321,7 @@ T.topPnlTable = function () {
 T.tradeTable = function () {
   return {
     cols: [
-      { k: "date", label: "日期", cls: "mono" }, { k: "t", label: "标的", cls: "mono" },
+      { k: "date", label: "日期", cls: "mono" }, { k: "t", label: "标的", cls: "mono", code: true },
       { k: "side", label: "方向", fmt: function (v) { return '<span class="' + (v === "B" ? "pos" : "neg") + '">' + (v === "B" ? "买" : "卖") + "</span>"; } },
       { k: "price", label: "价格", fmt: "num4", num: true },
       { k: "q", label: "数量", fmt: "num6", num: true },
@@ -1329,7 +1335,7 @@ T.tradeTable = function () {
 T.rtTable = function () {
   return {
     cols: [
-      { k: "t", label: "标的", cls: "mono" }, { k: "entry", label: "进场", cls: "mono" },
+      { k: "t", label: "标的", cls: "mono", code: true }, { k: "entry", label: "进场", cls: "mono" },
       { k: "exit", label: "出场", cls: "mono" }, { k: "days", label: "持有日", fmt: "int", num: true },
       { k: "pnl", label: "已实现盈亏", fmt: "pct2", num: true, cls: function (v) { return O.clsOf(v); } },
       { k: "reason", label: "出场原因" }, { k: "status", label: "状态" }
@@ -1499,7 +1505,7 @@ T.panoramaTable = function () {  var rows = D.tickers.map(function (r) {
   });
   return {
     cols: [
-      { k: "t", label: "标的", cls: "mono" }, { k: "cls", label: "类别", fmt: function (v) { return CLS[v] || v; } },
+      { k: "t", label: "标的", cls: "mono", code: true }, { k: "cls", label: "类别", fmt: function (v) { return CLS[v] || v; } },
       { k: "first", label: "首次", cls: "mono" }, { k: "last", label: "末次", cls: "mono" },
       { k: "days", label: "出现", fmt: "int", num: true }, { k: "held", label: "持有", fmt: "int", num: true },
       { k: "avg_w", label: "均权", fmt: "pct1", num: true }, { k: "trades", label: "交易", fmt: "int", num: true },
