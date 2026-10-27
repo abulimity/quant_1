@@ -12,6 +12,10 @@
 3. 把 CDN 的 `<script src=...plotly...>` 换成本仓库 vendor 的内联脚本（校验 sha256）。
 
 模板与 vendor 都不改。产物 UTF-8 无 BOM、双击可开、断网可用。
+
+注意：模板内嵌的 `window.__REPORT_DATA__` 是设计期的旧快照（48 键，没有 `names`），
+只在构建时被整块替换，不参与运行时。直接双击打开模板时没有 `names`，看板会
+回落到显示证券代码；要看简称请打开构建产物 `reports/dashboard.html`。
 """
 from __future__ import annotations
 
