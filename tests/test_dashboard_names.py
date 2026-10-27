@@ -46,6 +46,14 @@ def test_never_returns_empty_and_keeps_index():
     assert out["C.SH"] == "正常名称"
 
 
+def test_null_or_non_string_name_does_not_become_literal_nan():
+    """缺名或非字符串名称不能返回字符串 "nan"，否则看板会原样显示 nan。"""
+    raw = pd.Series({"A.SH": None, "B.SZ": float("nan"), "C.SH": "正常名称"})
+    out = abbreviate(raw)
+    assert "nan" not in list(out)
+    assert out["C.SH"] == "正常名称"
+
+
 def test_abbreviations_unique_within_dashboard_universe():
     """简称只需在看板用到的代码里唯一，全量 fund_basic 允许重名。
 

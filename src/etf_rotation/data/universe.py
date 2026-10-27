@@ -60,13 +60,17 @@ def abbreviate(names: pd.Series) -> pd.Series:
     """把 fund_basic 的正式名称裁成简称。
 
     只剥后缀与结尾的 `-CNY`，不截断、不改主体。剥完为空则退回原名。
+    非字符串（None/NaN 等）一律返回空串，绝不返回 `str(raw)`：`str(nan)` 是
+    非空的 "nan"，会绕过空值兜底，让看板原样显示 nan 且不报错。
     实测 971 个标的按此规则无重名，截断到 12 字则会撞出 14 组，故不做截断。
     """
     def _one(raw) -> str:
-        text = str(raw)
+        if not isinstance(raw, str):
+            return ""
+        text = raw
         for suffix in _ABBR_SUFFIXES:
             text = text.replace(suffix, "")
         text = re.sub(r"-CNY$", "", text)
-        return text.strip() or str(raw)
+        return text.strip() or raw
 
     return names.map(_one).rename("abbr")
