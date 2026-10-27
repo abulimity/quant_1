@@ -961,9 +961,12 @@ class DashboardBuilder:
         from etf_rotation import pipeline
         from etf_rotation.data import universe
 
-        codes = set(self.cls_map())
-        if self.tsig is not None:
-            codes.update(str(t) for t in self.tsig.index.get_level_values(1).unique())
+        # 只给 payload 真正引用的代码配简称：cls_map 有 2971 项，含已退市份额和
+        # 从未被引用的基金，直接用它会让 names 涨到 2631 键、多出约 50 KB。
+        # signals 已按 "signals" 缓存，且 names 是 BUILD_ORDER 最后一键，此处调用免费。
+        codes = set(self.signals())
+        if not codes:
+            return {}
         fb = pipeline.load_fund_basic()
         raw = fb.set_index("ts_code")["name"]
         abbr = universe.abbreviate(raw)

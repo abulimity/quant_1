@@ -92,6 +92,7 @@ def test_names_cover_every_code_in_payload(builder):
     codes = set(payload["signals"]) | {r["t"] for r in payload["tickers"]}
     assert codes, "payload 里没有证券代码，测试前提不成立"
     assert codes <= set(names), f"缺简称：{sorted(codes - set(names))[:5]}"
+    assert set(names) == codes, f"names 键多于 payload 引用：{sorted(set(names) - codes)[:5]}"
     assert all(isinstance(v, str) and v for v in names.values())
 
 
