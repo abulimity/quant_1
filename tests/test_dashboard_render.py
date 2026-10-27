@@ -232,6 +232,72 @@ def test_ticker_select_and_signal_title_show_name(probe):
     assert re.search(r"\d{6}\.(SH|SZ|CSI)", result["sigTitle"] or ""), f"D06 标题缺代码悬浮：{result['sigTitle']}"
 
 
+def test_d04_top10_change_hover_has_name_and_code(probe):
+    """TOP10 变动的菱形标记 hover 里，新进/退出也要「简称 代码」。
+
+    这条 trace 用 hoverinfo:"text" 而不是 hovertemplate，代码在 c.en / c.ex
+    数组里，最容易在「按 hovertemplate 找」的排查中被漏掉。
+
+    断言必须落在「每个代码前面紧邻一个中文简称」上，不能只查整串有没有中文：
+    日期与「新进」「退出」本身就是中文，整串断言在漏改时也会绿。
+    """
+    result = probe(
+        "const d=f.contentDocument; const gd=d.getElementById('d04Chart');"
+        "const tr=gd.data.filter(t=>t.hoverinfo==='text'&&/TOP10/.test(t.name||''))[0];"
+        "const RESULT={name:tr&&tr.name, texts:(tr&&tr.text||[]).slice(0,40)};"
+    )
+    assert result["texts"], f"没有找到 TOP10 变动的 text：{result['name']}"
+    # 取所有「新进/退出」后面那种以代码结尾的片段，要求代码前有中文简称
+    joined = " ".join(str(t) for t in result["texts"])
+    segs = re.findall(r"[\u4e00-\u9fa5][^<>]*?\d{6}\.(?:SH|SZ|CSI)", joined)
+    assert segs, f"TOP10 变动 hover 里没有任何「简称 代码」：{joined[:200]}"
+    # 反向保证：不存在「裸代码」片段（前面紧邻的不是中文）
+    bare = re.findall(r"(?:新进|退出)\s*\d{6}\.(?:SH|SZ|CSI)", joined)
+    assert not bare, f"TOP10 变动 hover 仍有裸代码：{bare[:3]}"
+
+
+def test_ticker_column_sort_follows_abbreviation(probe):
+    """标的列显示简称，点表头排序也必须按简称，否则得到按代码排的乱序。
+
+    排序在 `Tbl` 的 `filtered()` 里做，`inst.cfg.rows` 始终是原始顺序，
+    所以只能从渲染后的 DOM 读首屏，不能读 `inst.cfg.rows`。
+
+    不能拿 Python 的 `sorted()` 判浏览器结果：页面用 `localeCompare` 按
+    拼音排，Python 按 Unicode 码点排，中文下两者不同。改为在浏览器里用
+    同一个比较器复算，验证「页面顺序 == 按简称排的顺序」，并确认它
+    「不等于按代码排的顺序」，两条合起来才能证明排序键真的换成了简称。
+    """
+    result = probe(
+        "const d=f.contentDocument, w=f.contentWindow;"
+        "const el=d.getElementById('panoramaTable'); const inst=w.OD.TBL[el.id];"
+        "let idx=-1;"
+        "Array.from(el.querySelectorAll('thead th')).forEach((th,i)=>{"
+        "  if(th.textContent.trim().startsWith('标的'))idx=i;});"
+        "const RESULT={idx:idx, names:[], codes:[], byName:null, byCode:null};"
+        "if(idx>=0){"
+        "  el.querySelectorAll('thead th')[idx].click();"
+        "  const rows=Array.from(el.querySelectorAll('tbody tr'));"
+        "  const read=tr=>tr.children[idx].textContent.trim();"
+        "  const codes=rows.map(tr=>tr.children[idx].getAttribute('title')||'');"
+        "  RESULT.names=rows.slice(0,6).map(read);"
+        "  RESULT.codes=codes.slice(0,6);"
+        "  const all=rows.map(read); const asc=inst.asc;"
+        "  const byName=all.slice().sort((a,b)=>asc?a.localeCompare(b,'zh'):b.localeCompare(a,'zh'));"
+        "  RESULT.byName=(JSON.stringify(all)===JSON.stringify(byName));"
+        "  const byCode=codes.slice().sort((a,b)=>asc?a.localeCompare(b):b.localeCompare(a));"
+        "  RESULT.byCode=(JSON.stringify(codes)===JSON.stringify(byCode));"
+        "}"
+    )
+    assert result["idx"] >= 0, "panoramaTable 没有「标的」表头"
+    names = result.get("names") or []
+    assert len(names) >= 3, f"没有取到首屏简称：{result}"
+    assert all(re.search(r"[\u4e00-\u9fa5]", n) for n in names), f"首屏不是简称：{names}"
+    assert result["byName"], \
+        f"标的列没有按简称排序：{names}（对应代码 {result.get('codes')}）"
+    assert not result["byCode"], \
+        "排序结果同时等于按代码排的顺序，说明排序键仍是代码"
+
+
 def test_panorama_search_matches_name_and_code(probe):
     """panoramaTable 搜索框既能按代码也能按简称命中。"""
     result = probe(

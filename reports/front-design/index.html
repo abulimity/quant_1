@@ -789,6 +789,8 @@ function Tbl(mount, cfg) {
       rows = rows.slice().sort(function (a, b) {
         var va = typeof c.k === "function" ? c.k(a) : a[c.k], vb = typeof c.k === "function" ? c.k(b) : b[c.k];
         if (va == null) return 1; if (vb == null) return -1;
+        // 标的列显示的是简称，排序也要按简称，否则点表头得到按代码排的乱序。
+        if (c.code) { va = nm(va); vb = nm(vb); }
         if (typeof va === "number" && typeof vb === "number") return inst.asc ? va - vb : vb - va;
         return inst.asc ? String(va).localeCompare(String(vb)) : String(vb).localeCompare(String(va));
       });
@@ -2181,7 +2183,7 @@ B.d04 = function () {
   if (chg.length) {
     traces.push({ x: chg.map(function (c) { return DATES[c.i]; }), y: chg.map(function () { return 1.0; }), type: "scatter", mode: "markers", name: "TOP10 变动", yaxis: "y1", showlegend: false,
       marker: { size: 4, opacity: .55, symbol: chg.map(function (c) { return c.en.length && c.ex.length ? "diamond" : c.en.length ? "triangle-up" : "triangle-down"; }), color: chg.map(function (c) { return c.en.length && c.ex.length ? CLR.amber : c.en.length ? CLR.green : CLR.red; }), line: { width: 0 } },
-      text: chg.map(function (c) { return DATES[c.i] + "<br>新进 " + (c.en.join(", ") || "—") + "<br>退出 " + (c.ex.join(", ") || "—"); }), hoverinfo: "text" });
+      text: chg.map(function (c) { return DATES[c.i] + "<br>新进 " + (c.en.map(function (t) { return O.nm(t) + " " + t; }).join(", ") || "—") + "<br>退出 " + (c.ex.map(function (t) { return O.nm(t) + " " + t; }).join(", ") || "—"); }), hoverinfo: "text" });
   }
 
   /* 03 nav */
