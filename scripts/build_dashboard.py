@@ -7,7 +7,7 @@
     python scripts/build_dashboard.py --template other.html # 换外壳（须含同一个数据块）
 
 做的事只有三件：
-1. 用 `etf_rotation.report.dashboard` 从 run 重算 48 键载荷；
+1. 用 `etf_rotation.report.dashboard` 从 run 重算 49 键载荷；
 2. 把模板里的 `window.__REPORT_DATA__ = {...};` 整块替换成新载荷（紧凑 JSON）；
 3. 把 CDN 的 `<script src=...plotly...>` 换成本仓库 vendor 的内联脚本（校验 sha256）。
 
