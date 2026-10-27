@@ -2,6 +2,16 @@
 
 前提：`reports/dashboard.html` 已由 `scripts/build_dashboard.py` 生成。
 缺失时 skip，不静默通过。
+
+CSV 相关用例必须把桩打在 iframe 的 realm 上。产物在 iframe 里运行，
+`csv()` 里的 `new Blob(...)` 与 `a.click()` 解析到 iframe 的全局对象，
+不是外层 harness 页面的 `window`。因此任何调用 `OD.csv`、或点击表格
+`.csv` 按钮的渲染用例，都要在 iframe 上替换
+`HTMLAnchorElement.prototype.click`（要拿文本时再加 `Blob`），并在
+`finally` 里还原。漏掉 click 桩后，真实 `a.click()` 会触发浏览器下载，
+`--dump-dom` 会一直等待：用例挂满 180 秒超时，而不是给出一条普通失败。
+只替换父页面的 `window.Blob` / `window.HTMLAnchorElement` 同样无效，
+因为它们和 iframe 是两个 realm。
 """
 from __future__ import annotations
 
@@ -124,10 +134,22 @@ def test_csv_export_has_both_name_and_code(probe):
 
     直接调用产品代码 `OD.csv`，不复刻取值逻辑：复刻测的是测试自己，不是产品。
     断言落在「标的列那一格」上，不是整行：整行里还有类别、状态等中文字段，
-    只查整行会让缺简称的回归漏过。
+    只查整行会让缺简称的回归漏过。这条不是空话，第一版正是按整行断言，
+    删掉 `csv()` 的 `c.code` 分支后仍然通过，属于假绿。
     Blob 与 click 都要替换在 iframe 的 realm 上：`csv()` 在 iframe 内运行，
     解析到的是 iframe 的全局对象。替换父页面的 `window.Blob` 抓不到文本，
     真实 `a.click()` 又会触发下载让无头 Chrome 卡死。
+
+    负面对照（临时改产品代码 -> 确认本用例变红 -> `git checkout` 还原）：
+
+    1. 删掉 `csv()` 的 `c.code` 分支，即把两行
+       `if (c.code) { ... }` / `else if (c.csv) v = c.csv(v, r);`
+       改回单行 `if (c.csv) v = c.csv(v, r);`，重建后跑：
+       `.venv\\Scripts\\python.exe -m pytest tests\\test_dashboard_render.py -q -k csv`
+       预期红：`assert None`，标的格是 `513100.SH`，没有简称。
+    2. 摘掉 `tradeTable` 的 `code: true` 标记（`{ k: "t", label: "标的", cls: "mono" }`），
+       重建后跑同一条命令。
+       预期红：`assert 'tradeTable' in {...}`。
     """
     result = probe(
         "const w=f.contentWindow;"
