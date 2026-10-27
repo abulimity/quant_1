@@ -864,7 +864,8 @@ function selectDate(s, ticker) {
 function setTicker(t, silent) {
   if (D.signals[t]) state.ticker = t;
   var sel = $("#tickerSel"); if (sel && sel.value !== state.ticker) sel.value = state.ticker;
-  $("#sigTicker").textContent = state.ticker;
+  $("#sigTicker").textContent = nm(state.ticker);
+  $("#sigTicker").setAttribute("title", state.ticker);
   if (window.OD && OD.B.signal) OD.B.signal();
   if (!silent) syncUrl();
   if (D.tickers) {
@@ -965,11 +966,12 @@ function boot() {
   var e = currentEvent(); if (e) state.date = e.date;
   var sel = $("#tickerSel");
   var tickers = Object.keys(D.signals).sort(function (a, b) { return (D.signals[b].length - D.signals[a].length); });
-  sel.innerHTML = tickers.map(function (t) { return '<option value="' + t + '">' + t + "</option>"; }).join("");
+  sel.innerHTML = tickers.map(function (t) { return '<option value="' + t + '">' + esc(nm(t)) + " · " + t + "</option>"; }).join("");
   if (!D.signals[state.ticker] && tickers.length) state.ticker = tickers[0];
   sel.value = state.ticker;
   $("#dFrom").value = DATES[RANGE.i0]; $("#dTo").value = DATES[RANGE.i1];
-  $("#sigTicker").textContent = state.ticker;
+  $("#sigTicker").textContent = nm(state.ticker);
+  $("#sigTicker").setAttribute("title", state.ticker);
   $("#sideMeta").innerHTML = "run <span class='mono'>" + esc(D.meta.run_id) + "</span><br>snapshot <span class='mono'>" + esc(D.meta.snapshot || "—") + "</span><br>open · 8bp";
   $("#c0Range").textContent = D.meta.start + " → " + D.meta.end + " · " + D.meta.n_days.toLocaleString("en-US") + " 个交易日 · v" + D.meta.version;
   $("#c0Summary").textContent = "默认 open 口径 · 单边 " + D.meta.cost_bps + "bp · 参数 " + D.meta.params_brief;
@@ -2005,12 +2007,12 @@ B.exDef = function () {
 B.topPnl = function () {
   var rows = D.topPnl.slice(0, 15).slice().reverse();
   plot(sel("topPnlChart"), [{
-    x: rows.map(function (r) { return r.pnl; }), y: rows.map(function (r) { return r.t; }), type: "bar", orientation: "h",
+    x: rows.map(function (r) { return r.pnl; }), y: rows.map(function (r) { return O.nm(r.t); }), type: "bar", orientation: "h",
     marker: { color: rows.map(function (r) { return r.pnl >= 0 ? "rgba(34,197,139,.62)" : "rgba(255,95,109,.62)"; }), line: { width: 0 } },
     text: rows.map(function (r) { return pct(r.pnl, 1); }), textposition: "outside", textfont: { size: 8.5, color: "#aab6c8" },
-    hovertemplate: "%{y}<br>%{x:.2%}<extra></extra>"
+    hovertemplate: "%{y}<br>%{x:.2%}<br>%{customdata}<extra></extra>", customdata: rows.map(function (r) { return r.t; })
   }], LAY({
-    margin: { l: 74, r: 34, t: 12, b: 22 }, showlegend: false, xaxis: axis({ tickformat: ".0%" }), yaxis: axis({ type: "category", tickfont: { size: 9 } })
+    margin: { l: 8, r: 34, t: 12, b: 22 }, showlegend: false, xaxis: axis({ tickformat: ".0%" }), yaxis: axis({ type: "category", tickfont: { size: 9 } })
   }));
 };
 
@@ -2172,7 +2174,7 @@ B.d04 = function () {
   }
   var pal = ["rgba(76,141,255,.82)", "rgba(169,139,255,.82)", "rgba(242,169,59,.82)", "rgba(53,199,216,.82)", "rgba(34,197,139,.82)", "rgba(239,127,176,.82)", "rgba(122,162,255,.82)", "rgba(208,163,90,.82)", "rgba(102,214,174,.82)", "rgba(178,140,255,.82)"];
   top.forEach(function (t, j) {
-    traces.push({ x: x, y: dayMap.map(function (m) { return m[t] || 0; }), type: "scatter", mode: "lines", name: t, yaxis: "y1", showlegend: false, stackgroup: "h", line: { width: 0 }, fillcolor: pal[j % pal.length], hovertemplate: "%{y:.1%}<extra>" + t + "</extra>" });
+    traces.push({ x: x, y: dayMap.map(function (m) { return m[t] || 0; }), type: "scatter", mode: "lines", name: t, yaxis: "y1", showlegend: false, stackgroup: "h", line: { width: 0 }, fillcolor: pal[j % pal.length], hovertemplate: "%{y:.1%}<extra>" + O.nm(t) + " " + t + "</extra>" });
   });
   traces.push({ x: x, y: other, type: "scatter", mode: "lines", name: "其他/现金", yaxis: "y1", showlegend: false, stackgroup: "h", line: { width: 0 }, fillcolor: "rgba(57,68,90,.85)", hovertemplate: "%{y:.1%}<extra>其他</extra>" });
   var chg = D.top10Changes.filter(function (c) { return c.i >= i0 && c.i <= i1; });

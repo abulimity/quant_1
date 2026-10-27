@@ -187,6 +187,51 @@ def test_csv_export_has_both_name_and_code(probe):
             assert re.search(r"\d{6}\.(SH|SZ|CSI)", cell), f"{t['id']} 标的列缺代码：{cell}"
 
 
+def test_top_pnl_chart_axis_uses_abbreviation(probe):
+    """y 轴放简称，代码走 hover 的 customdata（hovertemplate 是每条 trace 一份，
+    代码只能逐点传入，不能写死在模板字符串里）。"""
+    result = probe(
+        "const d=f.contentDocument; const gd=d.getElementById('topPnlChart'); const RESULT={};"
+        "RESULT.y=gd.data[0].y; RESULT.hover=gd.data[0].hovertemplate;"
+        "RESULT.cd=gd.data[0].customdata;"
+        "const t=gd.querySelectorAll('.ytick text');"
+        "RESULT.tickW=Math.max.apply(null,Array.from(t).map(x=>Math.round(x.getBoundingClientRect().width)));"
+        "RESULT.plotW=Math.round(gd.getBoundingClientRect().width);"
+    )
+    assert result["y"], "topPnlChart 没有数据"
+    assert not any(re.search(r"\d{6}\.(SH|SZ|CSI)", str(v)) for v in result["y"]), "y 轴仍是代码"
+    assert "%{customdata}" in result["hover"], f"hover 没有消费 customdata：{result['hover']}"
+    assert any(re.search(r"\d{6}\.(SH|SZ|CSI)", str(v)) for v in result["cd"] or []), "hover 里没有代码"
+    assert result["tickW"] < result["plotW"] * 0.35, f"y 轴标签过宽：{result['tickW']} / {result['plotW']}"
+
+
+def test_d04_hover_has_name_and_code(probe):
+    result = probe(
+        "const d=f.contentDocument; const gd=d.getElementById('d04Chart');"
+        "const tr=gd.data.filter(t=>t.stackgroup==='h')[0];"
+        "const RESULT={hover:tr.hovertemplate, name:tr.name};"
+    )
+    assert re.search(r"[\u4e00-\u9fa5]", result["hover"]), f"d04 hover 没有简称：{result['hover']}"
+    assert re.search(r"\d{6}\.(SH|SZ|CSI)", result["hover"]), f"d04 hover 没有代码：{result['hover']}"
+
+
+def test_ticker_select_and_signal_title_show_name(probe):
+    result = probe(
+        "const d=f.contentDocument, w=f.contentWindow; const RESULT={};"
+        "const sel=d.getElementById('tickerSel');"
+        "RESULT.optCount=sel.options.length;"
+        "RESULT.optText=sel.options[0].textContent;"
+        "RESULT.optValue=sel.options[0].value;"
+        "RESULT.sigTicker=d.getElementById('sigTicker').textContent;"
+        "RESULT.sigTitle=d.getElementById('sigTicker').getAttribute('title');"
+    )
+    assert result["optCount"] > 100, "下拉没有填充"
+    assert re.search(r"[\u4e00-\u9fa5]", result["optText"]), f"下拉选项没有简称：{result['optText']}"
+    assert re.search(r"\d{6}\.(SH|SZ|CSI)", result["optValue"]), "下拉 option.value 被改坏了"
+    assert re.search(r"[\u4e00-\u9fa5]", result["sigTicker"]), f"D06 标题没有简称：{result['sigTicker']}"
+    assert re.search(r"\d{6}\.(SH|SZ|CSI)", result["sigTitle"] or ""), f"D06 标题缺代码悬浮：{result['sigTitle']}"
+
+
 def test_panorama_search_matches_name_and_code(probe):
     """panoramaTable 搜索框既能按代码也能按简称命中。"""
     result = probe(
