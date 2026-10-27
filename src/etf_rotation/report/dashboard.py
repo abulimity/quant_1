@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-"""单文件看板的数据载荷：把一个 run 重建成 `reports/front-design` 的 48 键契约。
+"""单文件看板的数据载荷：把一个 run 重建成 `reports/front-design` 的 49 键契约。
 
 前端（`reports/front-design/index.html` 及其尾部 `app.js`）只认 `window.__REPORT_DATA__`
-的 48 个顶层键，每个字段的精度也由前端写死。本模块只做「从 run 产物重算」：
+的 49 个顶层键，每个字段的精度也由前端写死。本模块只做「从 run 产物重算」：
 
     ReportContext   equity / benchmark / weights / holdings / trades / diary /
                     ticker_signals / stages / classification / params / metrics
@@ -152,7 +152,7 @@ def dumps(payload):
 
 
 class DashboardBuilder:
-    """一次 run → 48 键载荷。所有中间量懒加载并缓存。"""
+    """一次 run → 49 键载荷。所有中间量懒加载并缓存。"""
 
     def __init__(self, ctx: ReportContext, run_dir: Path, reports_dir: Path):
         self.ctx = ctx
@@ -271,7 +271,7 @@ class DashboardBuilder:
             return {t: self.cls_of(t) for t in sorted(names)}
         return self._c("cls_map", build)
 
-    # ============================================================ 48 键
+    # ============================================================ 49 键
 
     # 1 ── meta
     def meta(self) -> dict:
@@ -952,6 +952,23 @@ class DashboardBuilder:
             })
         rows.sort(key=lambda r: (-r["held"], -r["days"], r["t"]))
         return rows
+
+    # ── names（第 49 键，位置紧跟 tickers 便于阅读，键序仍由 BUILD_ORDER 决定）
+    def names(self) -> dict:
+        return self._c("names", self._build_names)
+
+    def _build_names(self):
+        from etf_rotation import pipeline
+        from etf_rotation.data import universe
+
+        codes = set(self.cls_map())
+        if self.tsig is not None:
+            codes.update(str(t) for t in self.tsig.index.get_level_values(1).unique())
+        fb = pipeline.load_fund_basic()
+        raw = fb.set_index("ts_code")["name"]
+        abbr = universe.abbreviate(raw)
+        # 查不到或简称为空串时回落成代码本身，前端无需再做空值判断
+        return {c: abbr.get(c) or c for c in sorted(codes)}
 
     # 17 ── topPnl
     def topPnl(self) -> list:
@@ -1795,7 +1812,7 @@ BUILD_ORDER = [
     "contribution", "turnoverDecomp", "costByYear", "sweeps", "grid2d",
     "costLadder", "dsr", "ablation", "assumption", "oos", "oosOverride",
     "regime", "attribution", "exposureSummary", "exDef", "dataQuality", "gap",
-    "issues", "lagScan", "roundtrips", "slippage", "capacity", "dist",
+    "issues", "lagScan", "roundtrips", "slippage", "capacity", "dist", "names",
 ]
 
 BUILDER_METHODS = {
@@ -1816,7 +1833,7 @@ BUILDER_METHODS = {
     "exposureSummary": "exposureSummary", "exDef": "exDef",
     "dataQuality": "dataQuality", "gap": "gap", "issues": "issues",
     "lagScan": "lagScan", "roundtrips": "roundtrips", "slippage": "slippage",
-    "capacity": "capacity", "dist": "dist",
+    "capacity": "capacity", "dist": "dist", "names": "names",
 }
 
 
@@ -1910,7 +1927,7 @@ def _plain(value):
 
 def build_dashboard(ctx: ReportContext, run_dir: Path, reports_dir: Path | None = None,
                     only=None) -> dict:
-    """按 48 键契约构建看板数据；`only` 给键名列表可只算部分（调试用）。"""
+    """按 49 键契约构建看板数据；`only` 给键名列表可只算部分（调试用）。"""
     reports_dir = Path(reports_dir) if reports_dir else Path(run_dir).parent.parent
     builder = DashboardBuilder(ctx, run_dir, reports_dir)
     return builder.build(only=only)

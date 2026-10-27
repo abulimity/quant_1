@@ -81,3 +81,24 @@ def test_abbreviations_unique_within_dashboard_universe():
     assert abbr.notna().all(), f"有代码查不到名称：{abbr[abbr.isna()].index[:5].tolist()}"
     dup = abbr[abbr.duplicated(keep=False)]
     assert dup.empty, f"看板内简称重复：{sorted(dup.items())[:5]}"
+
+
+# ---------------------------------------------------------------- names 载荷
+
+
+def test_names_cover_every_code_in_payload(builder):
+    payload = builder.build(only=["names", "signals", "tickers"])
+    names = payload["names"]
+    codes = set(payload["signals"]) | {r["t"] for r in payload["tickers"]}
+    assert codes, "payload 里没有证券代码，测试前提不成立"
+    assert codes <= set(names), f"缺简称：{sorted(codes - set(names))[:5]}"
+    assert all(isinstance(v, str) and v for v in names.values())
+
+
+def test_names_is_last_key_in_build_order():
+    from etf_rotation.report.dashboard import BUILDER_METHODS, BUILD_ORDER
+
+    assert len(BUILD_ORDER) == 49
+    assert len(set(BUILD_ORDER)) == 49
+    assert BUILD_ORDER[-1] == "names"
+    assert BUILDER_METHODS["names"] == "names"

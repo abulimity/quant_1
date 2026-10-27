@@ -1,26 +1,24 @@
-"""单文件看板数据载荷（48 键）契约测试（计划收尾 Task 2）。
+"""单文件看板数据载荷（49 键）契约测试（计划收尾 Task 2）。
 
 口径：
-- `BUILD_ORDER` 恰好 48 项、无重复、顺序稳定（前端按此顺序渲染）；
+- `BUILD_ORDER` 恰好 49 项、无重复、顺序稳定（前端按此顺序渲染）；
 - 每个键在 `DashboardBuilder` 里都有对应构建方法（`BUILDER_METHODS` 全映射）；
 - `dumps()` 输出能被 `json.JSONDecoder().raw_decode` 完整解析，且不含 NaN/Infinity
   （`allow_nan=False`，NaN/Infinity 一律抛 ValueError）；
 - 抽样键（meta/kpi/stats，轻量）与 run 直读结果一致：meta 的 run_id/git_sha 直读
   `meta.parquet`，kpi.s.sharpe 与 stats.cost.fees 直读 `metrics.parquet`。
 
-纪律：不加载 design-data.json，不断言 48 键全量；真实 run 缺失时 `pytest.skip`。
+纪律：不加载 design-data.json，不断言 49 键全量；真实 run 缺失时 `pytest.skip`。
 价格面板与分类重（200 万行），沿用 test_report_context 的做法 monkeypatch 掉。
 """
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pytest
 
-from etf_rotation.report.context import ReportContext
 from etf_rotation.report.dashboard import (
     BUILDER_METHODS,
     BUILD_ORDER,
@@ -28,47 +26,13 @@ from etf_rotation.report.dashboard import (
     dumps,
 )
 
-ROOT = Path(__file__).resolve().parents[1]
-
-
-def _real_run_dir() -> Path | None:
-    """返回 reports/latest.json 指向的 run 目录；run 不存在返回 None。"""
-    latest_path = ROOT / "reports" / "latest.json"
-    if not latest_path.exists():
-        return None
-    latest = json.loads(latest_path.read_text(encoding="utf-8"))
-    run_id = latest.get("run_id")
-    if not run_id:
-        return None
-    run_dir = ROOT / "reports" / "runs" / run_id
-    if not (run_dir / "meta.parquet").exists():
-        return None
-    return run_dir
-
-
-@pytest.fixture
-def builder(monkeypatch) -> DashboardBuilder:
-    run_dir = _real_run_dir()
-    if run_dir is None:
-        pytest.skip("真实 run 缺失（reports/latest.json 无有效 run_id）")
-    from etf_rotation import pipeline
-    from etf_rotation.data import universe
-
-    idx = pd.to_datetime(["2024-01-02", "2024-01-03"])
-    prices = pd.DataFrame({"A": [10.0, 10.1]}, index=idx)
-    monkeypatch.setattr(pipeline, "load_prices", lambda: (prices, prices, prices))
-    monkeypatch.setattr(pipeline, "load_fund_basic", lambda: pd.DataFrame({"ts_code": ["A"]}))
-    monkeypatch.setattr(universe, "classify", lambda _: {})
-    ctx = ReportContext.load(run_dir)
-    return DashboardBuilder(ctx, run_dir, run_dir.parent.parent)
-
 
 # ---------------------------------------------------------------- 静态契约
 
 
-def test_build_order_48_unique_stable():
-    assert len(BUILD_ORDER) == 48
-    assert len(set(BUILD_ORDER)) == 48
+def test_build_order_49_unique_stable():
+    assert len(BUILD_ORDER) == 49
+    assert len(set(BUILD_ORDER)) == 49
     assert BUILD_ORDER == [
         "meta", "kpi", "kpiTable", "params", "paramSnapshot", "series", "monthly",
         "months", "annual", "drawdowns", "longest", "stats", "events", "candidates",
@@ -77,7 +41,7 @@ def test_build_order_48_unique_stable():
         "contribution", "turnoverDecomp", "costByYear", "sweeps", "grid2d",
         "costLadder", "dsr", "ablation", "assumption", "oos", "oosOverride",
         "regime", "attribution", "exposureSummary", "exDef", "dataQuality", "gap",
-        "issues", "lagScan", "roundtrips", "slippage", "capacity", "dist",
+        "issues", "lagScan", "roundtrips", "slippage", "capacity", "dist", "names",
     ]
 
 
