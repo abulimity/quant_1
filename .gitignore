@@ -37,6 +37,9 @@ reports/latest.json
 reports/metrics.json
 reports/index.md
 reports/*.html
+# 看板产物是自包含单文件（内联 plotly + 载荷），入库以便 clone 后直接打开。
+# 重建需要 reports/runs 与 data/，二者不入库，所以产物是唯一可看的入口。
+!reports/dashboard.html
 reports/sensitivity.json
 reports/sensitivity_summary.json
 reports/sensitivity/

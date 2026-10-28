@@ -1,0 +1,6 @@
+# 看板产物必须逐字节保真：它是内联了 plotly 与载荷的单文件，
+# 任何换行转换都会改变体积与 sha256，也会让构建脚本的可复现校验失效。
+reports/dashboard.html -text
+reports/front-design/index.html -text
+
+# 其余文件在 Windows 上沿用 autocrlf 的默认行为，不做额外约束。
